@@ -68,7 +68,7 @@ wss.on('connection', (ws, req) => {
 
   let room = rooms.get(code);
   if (!room) {
-    room = { sender: null, receiver: null, timer: null };
+    room = { sender: null, receiver: null, timer: null, buffer: [] };
     rooms.set(code, room);
     room.timer = setTimeout(() => destroyRoom(code), ROOM_TTL);
   }
@@ -79,10 +79,27 @@ wss.on('connection', (ws, req) => {
   room[role] = ws;
   ws._code = code; ws._role = role;
 
+  // Send any buffered messages intended for this role
+  if (room.buffer && room.buffer.length > 0) {
+    room.buffer.forEach(msg => {
+      if (msg.role !== role) {
+        ws.send(msg.data, { binary: msg.binary });
+      }
+    });
+    // Clear the messages we just sent
+    room.buffer = room.buffer.filter(msg => msg.role === role);
+  }
+
   ws.on('message', (data, binary) => {
     const r = rooms.get(code); if (!r) return;
     const other = role === 'sender' ? r.receiver : r.sender;
-    if (other?.readyState === WebSocket.OPEN) other.send(data, { binary });
+    if (other?.readyState === WebSocket.OPEN) {
+      other.send(data, { binary });
+    } else {
+      // Buffer messages for the other peer when they connect
+      if (!r.buffer) r.buffer = [];
+      r.buffer.push({ role, data, binary });
+    }
   });
 
   ws.on('close', () => {
