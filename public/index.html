@@ -779,10 +779,21 @@ function runInboxReceiver(code) {
   
   inboxWs.onclose = () => {
     logD('Inbox signaling connection closed.');
-    setSt('Dashboard disconnected.', 'dr');
-    $('inbox-status').className = 'bdg bwn';
-    $('inbox-status').innerHTML = '<span class="dot dr"></span> Disconnected';
-    stopTimer();
+    if (inboxWs !== null) {
+      setSt('Dashboard disconnected. Reconnecting...', 'dy');
+      $('inbox-status').className = 'bdg bwn';
+      $('inbox-status').innerHTML = '<span class="dot dy pu"></span> Reconnecting...';
+      setTimeout(() => {
+        if (inboxWs !== null && getActiveSessionType()?.type === 'inbox') {
+          runInboxReceiver(code);
+        }
+      }, 3000);
+    } else {
+      setSt('Dashboard disconnected.', 'dr');
+      $('inbox-status').className = 'bdg bwn';
+      $('inbox-status').innerHTML = '<span class="dot dr"></span> Disconnected';
+      stopTimer();
+    }
   };
   
   inboxWs.onerror = () => {
@@ -1067,8 +1078,9 @@ function cleanupInboxPeer(senderId) {
 
 function closeInbox() {
   if (inboxWs) {
-    inboxWs.close();
+    const ws = inboxWs;
     inboxWs = null;
+    ws.close();
   }
   for (const [senderId] of inboxPeers) {
     cleanupInboxPeer(senderId);

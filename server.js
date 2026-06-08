@@ -77,14 +77,20 @@ wss.on('connection', (ws, req) => {
   const senderId = url.searchParams.get('senderId');
   const isInboxSender = (role === 'sender' && (isInbox || room.inbox || senderId));
 
-  if (role === 'inbox' && room.inbox?.readyState === WebSocket.OPEN) {
-    ws.close(1008, 'Inbox taken'); return;
+  if (role === 'inbox') {
+    if (room.inbox && room.inbox !== ws && room.inbox.readyState === WebSocket.OPEN) {
+      room.inbox.close(4000, 'Replaced');
+    }
   }
-  if (role === 'receiver' && room.receiver?.readyState === WebSocket.OPEN) {
-    ws.close(1008, 'Receiver taken'); return;
+  if (role === 'receiver') {
+    if (room.receiver && room.receiver !== ws && room.receiver.readyState === WebSocket.OPEN) {
+      room.receiver.close(4000, 'Replaced');
+    }
   }
-  if (role === 'sender' && !isInboxSender && room.sender?.readyState === WebSocket.OPEN) {
-    ws.close(1008, 'Sender taken'); return;
+  if (role === 'sender' && !isInboxSender) {
+    if (room.sender && room.sender !== ws && room.sender.readyState === WebSocket.OPEN) {
+      room.sender.close(4000, 'Replaced');
+    }
   }
   if (role === 'sender' && isInboxSender) {
     if (!senderId) {
