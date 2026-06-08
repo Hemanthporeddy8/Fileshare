@@ -110,7 +110,7 @@ footer a:hover{color:var(--a)}
       <p class="tg">P2P · any size · always free</p>
     </header>
     <div id="root"></div>
-    <footer>Files travel directly between browsers — never stored on a server.<br><a href="https://github.com/your-username/fileshare" target="_blank" rel="noopener">View source →</a></footer>
+    <footer>Files travel directly between browsers — never stored on a server.</footer>
   </div>
 </div>
 <script>
@@ -120,9 +120,9 @@ const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0
 
 let logTimer = null, logSeconds = 0;
 function logD(msg) {
+  console.log(msg);
   const dbg = document.getElementById('dbg');
   if (!dbg) return;
-  dbg.style.display = 'block';
   const time = new Date().toLocaleTimeString([], { hour12: false, second: '2-digit', minute: '2-digit' });
   dbg.innerHTML += `<div>[${time}] ${msg}</div>`;
   dbg.scrollTop = dbg.scrollHeight;
@@ -177,9 +177,10 @@ function showHome(){
   root().innerHTML=`
     <div class="card fade">
       <div class="mg">
-        <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send</div><div class="sb">Pick a file</div></button>
-        <button class="mb" onclick="showRecv()"><div class="ic">⬇️</div><div class="lb">Receive</div><div class="sb">Enter a code</div></button>
-        <button class="mb" style="grid-column: span 2;" onclick="showCreateInbox()"><div class="ic">📥</div><div class="lb">Create Inbox Dashboard</div><div class="sb">Multi-device file drop inbox</div></button>
+        <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send File</div><div class="sb">Generate room code</div></button>
+        <button class="mb" onclick="showSendToInbox()"><div class="ic">📤</div><div class="lb">Send to Inbox</div><div class="sb">Enter inbox code</div></button>
+        <button class="mb" onclick="showRecv()"><div class="ic">⬇️</div><div class="lb">Receive File</div><div class="sb">Enter room code</div></button>
+        <button class="mb" onclick="showCreateInbox()"><div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a drop dashboard</div></button>
       </div>
     </div>
     <div class="pills"><span class="pill">🔒 End-to-end P2P</span><span class="pill">⚡ Any file size</span><span class="pill">🗑️ Never stored</span><span class="pill">💸 Free forever</span></div>`;
@@ -1349,6 +1350,33 @@ function disconnect1to1Receiver() {
   if (active1to1Receiver.pc) active1to1Receiver.pc.close();
   active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
   showHome();
+}
+
+function showSendToInbox(){
+  stopTimer();
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send to Inbox</span>
+        <button class="btn bg bsm" onclick="showHome()">← Back</button>
+      </div>
+      <div class="slb" style="margin-bottom:0.45rem">Enter the 6-character Inbox Code</div>
+      <input class="ci" id="ib-code" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryConnectInbox()">
+      <button class="btn ba" onclick="tryConnectInbox()">Next →</button>
+    </div>`;
+  setTimeout(()=>$('ib-code')?.focus(),50);
+}
+
+function tryConnectInbox(){
+  const c=($('ib-code')?.value||'').trim().toUpperCase();
+  if(c.length!==6){
+    const el=$('ib-code');
+    if(!el)return;
+    el.style.borderColor='var(--er)';
+    setTimeout(()=>el.style.borderColor='',1400);
+    return;
+  }
+  startInboxSender(c);
 }
 
 showHome();
