@@ -461,7 +461,6 @@ function runReceiver(code){
               logD('P2P download complete. Saving file...');
               setProg(1,'Saving…');
               const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'});
-              saveBlob(blob,meta.name);
               active1to1Receiver.lastBlob = blob;
               active1to1Receiver.lastMeta = meta;
               showRecvDonePersistent1to1(meta, code, dc, pc, ws);
@@ -673,6 +672,7 @@ function runInboxReceiver(code) {
   startTimer();
   logD('Connecting to signaling server as Inbox...');
   inboxWs = new WebSocket(`${SIG}?code=${code}&role=inbox`);
+  inboxWs._code = code;
   
   inboxWs.onopen = () => {
     logD('Inbox dashboard is live.');
@@ -793,7 +793,9 @@ function setupInboxPeer(code, senderId) {
           const blob = new Blob(peer.chunks, { type: peer.meta.mimeType || 'application/octet-stream' });
           peer.blob = blob;
           updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
-          saveBlob(blob, peer.meta.name);
+          if ($('auto-accept')?.checked) {
+            saveBlob(blob, peer.meta.name);
+          }
           peer.chunks = [];
         }
       } else {
@@ -1411,8 +1413,8 @@ function setup1to1ReceiverDC(dc, lastMeta) {
         logD('P2P download complete. Saving file...');
         setProg(1, 'Saving…');
         const blob = new Blob(active1to1Receiver.chunks, { type: meta.mimeType || 'application/octet-stream' });
-        saveBlob(blob, meta.name);
-        
+        active1to1Receiver.lastBlob = blob;
+        active1to1Receiver.lastMeta = meta;
         showRecvDonePersistent1to1(meta, active1to1Receiver.code, active1to1Receiver.dc, active1to1Receiver.pc, active1to1Receiver.ws);
       }
     } else {
@@ -1514,6 +1516,13 @@ function previewInboxFile(senderId) {
   }
 }
 
+function downloadInboxFile(senderId) {
+  const peer = inboxPeers.get(senderId);
+  if (peer && peer.blob && peer.meta) {
+    saveBlob(peer.blob, peer.meta.name);
+  }
+}
+
 function deleteInboxFile(senderId, elId) {
   const el = $(elId);
   if (el) el.remove();
@@ -1536,6 +1545,12 @@ function deleteInboxFile(senderId, elId) {
 function preview1to1File() {
   if (active1to1Receiver.lastBlob && active1to1Receiver.lastMeta) {
     showPreviewModal(active1to1Receiver.lastBlob, active1to1Receiver.lastMeta.name);
+  }
+}
+
+function download1to1File() {
+  if (active1to1Receiver.lastBlob && active1to1Receiver.lastMeta) {
+    saveBlob(active1to1Receiver.lastBlob, active1to1Receiver.lastMeta.name);
   }
 }
 
