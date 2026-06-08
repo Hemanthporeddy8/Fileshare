@@ -174,8 +174,21 @@ function showHome(){
   if(ri) return startRelayRecv(ri);
   if(qc&&/^[A-Z0-9]{6}$/.test(qc)) return startRecv(qc);
   if(ib&&/^[A-Z0-9]{6}$/.test(ib)) return startInboxSender(ib);
+  
+  const session = getActiveSessionType();
+  const sessionBanner = session ? `
+    <div onclick="resumeActiveSession()" style="background:var(--ad); border:1px solid var(--a); border-radius:var(--r); padding:0.75rem 1rem; margin-bottom:1.25rem; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:all 0.15s;" onmouseover="this.style.filter='brightness(1.15)'" onmouseout="this.style.filter=''">
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span class="dot dg pu" style="width:8px; height:8px;"></span>
+        <span style="font-size:0.8rem; font-weight:500;">Active Connection: <strong>${session.code}</strong> (${session.type==='inbox'?'Inbox':session.type==='inboxsender'?'Inbox Sender':session.type==='1to1sender'?'Sender':'Receiver'})</span>
+      </div>
+      <span style="font-size:0.75rem; color:var(--a); font-weight:600;">Resume →</span>
+    </div>
+  ` : '';
+  
   root().innerHTML=`
     <div class="card fade">
+      ${sessionBanner}
       <div class="mg">
         <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send File</div><div class="sb">Generate room code</div></button>
         <button class="mb" onclick="showSendToInbox()"><div class="ic">📤</div><div class="lb">Send to Inbox</div><div class="sb">Enter inbox code</div></button>
@@ -449,6 +462,8 @@ function runReceiver(code){
               setProg(1,'Saving…');
               const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'});
               saveBlob(blob,meta.name);
+              active1to1Receiver.lastBlob = blob;
+              active1to1Receiver.lastMeta = meta;
               showRecvDonePersistent1to1(meta, code, dc, pc, ws);
             }
           } else {
@@ -557,7 +572,10 @@ function showInboxDashboard(code) {
     <div class="card fade" style="max-width: 600px;">
       <div class="rsb" style="margin-bottom: 1rem">
         <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
-        <button class="btn bg bsm" onclick="closeInbox()">Stop Inbox</button>
+        <div style="display:flex; gap:0.5rem">
+          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="closeInbox()" style="border-color:var(--er); color:var(--er);">Stop Inbox</button>
+        </div>
       </div>
       <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
       
@@ -603,7 +621,52 @@ function showInboxDashboard(code) {
     correctLevel : QRCode.CorrectLevel.M
   });
 
-  runInboxReceiver(code);
+  if (inboxWs && inboxWs.readyState === 1) {
+    $('inbox-status').className = 'bdg bok';
+    updateInboxConnectedCount();
+    setSt('Dashboard live — waiting for senders…', 'dg');
+    
+    const fileContainer = $('inbox-files');
+    if (fileContainer) {
+      fileContainer.innerHTML = '';
+      if (inboxPeers.size === 0) {
+        fileContainer.innerHTML = `
+          <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
+            No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
+          </div>`;
+      } else {
+        for (const [senderId, peer] of inboxPeers) {
+          if (peer.meta) {
+            renderInboxFileEntry(senderId, peer);
+            if (peer.accepted) {
+              $(`accept-row-${peer.elId}`).style.display = 'none';
+              $(`progress-row-${peer.elId}`).style.display = 'block';
+              const pct = peer.chunks.length > 0 ? Math.min(1, peer.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0) / peer.meta.size) : 0;
+              $(`bar-${peer.elId}`).style.width = (pct * 100).toFixed(1) + '%';
+              $(`percent-${peer.elId}`).textContent = Math.round(pct * 100) + '%';
+              if (pct === 1 || peer.blob) {
+                $(`badge-${peer.elId}`).className = 'bdg bok';
+                $(`badge-${peer.elId}`).textContent = 'Completed';
+                $(`progress-row-${peer.elId}`).style.display = 'block';
+                $(`label-${peer.elId}`).textContent = 'Saved';
+                $(`percent-${peer.elId}`).textContent = '100%';
+                $(`bar-${peer.elId}`).style.width = '100%';
+                $(`completed-row-${peer.elId}`).style.display = 'flex';
+                if (peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'))) {
+                  $(`preview-btn-${peer.elId}`).style.display = 'block';
+                }
+              } else {
+                $(`badge-${peer.elId}`).className = 'bdg binf';
+                $(`badge-${peer.elId}`).textContent = 'Downloading';
+              }
+            }
+          }
+        }
+      }
+    }
+  } else {
+    runInboxReceiver(code);
+  }
 }
 
 function runInboxReceiver(code) {
@@ -727,8 +790,9 @@ function setupInboxPeer(code, senderId) {
         }
         else if (msg.type === 'done') {
           logD(`P2P download from ${senderId} complete.`);
-          updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
           const blob = new Blob(peer.chunks, { type: peer.meta.mimeType || 'application/octet-stream' });
+          peer.blob = blob;
+          updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
           saveBlob(blob, peer.meta.name);
           peer.chunks = [];
         }
@@ -801,6 +865,11 @@ function renderInboxFileEntry(senderId, peer) {
       <button class="btn bg bsm" onclick="rejectInboxFile('${senderId}')" style="width:auto; padding:0 0.75rem;">✕</button>
     </div>
     
+    <div id="completed-row-${peer.elId}" style="display:none; gap:0.5rem; margin-top:0.25rem;">
+      <button class="btn ba bsm" id="preview-btn-${peer.elId}" onclick="previewInboxFile('${senderId}')" style="flex:1; display:none;">👁️ Preview</button>
+      <button class="btn bg bsm" onclick="deleteInboxFile('${senderId}', '${peer.elId}')" style="border-color:var(--er); color:var(--er); flex:1;">🗑️ Delete</button>
+    </div>
+    
     <div id="progress-row-${peer.elId}" style="display:none;">
       <div class="pr" style="font-size:0.68rem; color:var(--m2); margin-bottom:0.3rem;">
         <span id="label-${peer.elId}">Receiving...</span>
@@ -868,6 +937,15 @@ function updateInboxFileProgress(senderId, ratio, status, speed, eta) {
       $(`bar-${peer.elId}`).style.width = '100%';
       $(`speed-${peer.elId}`).textContent = '';
       $(`eta-${peer.elId}`).textContent = '';
+      
+      $(`accept-row-${peer.elId}`).style.display = 'none';
+      $(`completed-row-${peer.elId}`).style.display = 'flex';
+      
+      const isPreviewable = peer.meta && peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'));
+      if (isPreviewable) {
+        $(`preview-btn-${peer.elId}`).style.display = 'block';
+      }
+      
       setTimeout(() => {
         const pr = $(`progress-row-${peer.elId}`);
         if (pr) pr.style.display = 'none';
@@ -969,7 +1047,10 @@ function showInboxSenderProgressUI(file, code) {
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem">
         <span class="bdg binf"><span class="dot db pu"></span> Sending to Inbox</span>
-        <button class="btn bg bsm" onclick="cancelInboxSender('${code}')">Disconnect</button>
+        <div style="display:flex; gap:0.5rem">
+          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er);">Disconnect</button>
+        </div>
       </div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
       
@@ -1127,6 +1208,8 @@ function sendInboxFileDirectly(file) {
 }
 
 function showInboxSendDone(file, code) {
+  activeInboxSender.lastFile = file;
+  
   root().innerHTML = `
     <div class="card fade" style="text-align:center">
       <div class="dic">✅</div>
@@ -1143,7 +1226,10 @@ function showInboxSendDone(file, code) {
         <input type="file" id="fi" style="display:none" onchange="onFPInbox(event, '${code}')">
       </div>
       
-      <button class="btn bg mt1" onclick="cancelInboxSender('${code}')">← Disconnect</button>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <button class="btn bg" onclick="showHome()" style="flex:1;">← Minimize</button>
+        <button class="btn bg" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er); width:auto; padding:0 1rem;">Disconnect</button>
+      </div>
     </div>`;
 }
 
@@ -1159,7 +1245,7 @@ function cancelInboxSender(code) {
 }
 
 function showSendDonePersistent1to1(file, code, dc, pc, ws) {
-  active1to1Sender = { code, dc, pc, ws };
+  active1to1Sender = { code, dc, pc, ws, lastFile: file };
   
   root().innerHTML = `
     <div class="card fade" style="text-align:center">
@@ -1179,7 +1265,10 @@ function showSendDonePersistent1to1(file, code, dc, pc, ws) {
         <input type="file" id="fi" style="display:none" onchange="onFP1to1Persistent(event)">
       </div>
       
-      <button class="btn bg mt1" onclick="disconnect1to1Sender()">← Disconnect</button>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <button class="btn bg" onclick="showHome()" style="flex:1;">← Minimize</button>
+        <button class="btn bg" onclick="disconnect1to1Sender()" style="border-color:var(--er); color:var(--er); width:auto; padding:0 1rem;">Disconnect</button>
+      </div>
     </div>`;
 }
 
@@ -1240,18 +1329,34 @@ function disconnect1to1Sender() {
 }
 
 function showRecvDonePersistent1to1(lastMeta, code, dc, pc, ws) {
-  active1to1Receiver = { code, dc, pc, ws, chunks: [] };
+  active1to1Receiver = { code, dc, pc, ws, chunks: [], lastMeta, lastBlob: active1to1Receiver.lastBlob || null };
+  
+  const hasFile = lastMeta && lastMeta.size > 0;
+  const isPreviewable = hasFile && lastMeta.mimeType && (lastMeta.mimeType.startsWith('image/') || lastMeta.mimeType.startsWith('audio/') || lastMeta.mimeType.startsWith('video/'));
   
   root().innerHTML = `
     <div class="card fade">
       <div class="rsb" style="margin-bottom: 1rem">
         <span class="bdg bok"><span class="dot dg pu"></span> Connected to Sender</span>
-        <button class="btn bg bsm" onclick="disconnect1to1Receiver()">Disconnect</button>
+        <div style="display:flex; gap:0.5rem">
+          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="disconnect1to1Receiver()" style="border-color:var(--er); color:var(--er);">Disconnect</button>
+        </div>
       </div>
       
-      <div class="dic" style="margin-bottom:0.4rem">⬇️</div>
-      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;text-align:center;">Download complete</div>
-      <p style="font-size:.8rem;color:var(--m);margin-bottom:1rem;text-align:center;"><strong>${lastMeta.name}</strong> (${fmtB(lastMeta.size)}) saved</p>
+      ${hasFile ? `
+        <div class="dic" style="margin-bottom:0.4rem">⬇️</div>
+        <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;text-align:center;">Download complete</div>
+        <p style="font-size:.8rem;color:var(--m);margin-bottom:1rem;text-align:center;"><strong>${lastMeta.name}</strong> (${fmtB(lastMeta.size)}) saved</p>
+        
+        <div style="display:flex; gap:0.5rem; justify-content:center; margin-bottom:1.25rem;">
+          ${isPreviewable ? `<button class="btn ba bsm" onclick="preview1to1File()">👁️ Preview</button>` : ''}
+          <button class="btn bg bsm" onclick="delete1to1File()" style="border-color:var(--er); color:var(--er);">Delete</button>
+        </div>
+      ` : `
+        <div class="dic" style="margin-bottom:0.4rem">📁</div>
+        <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;text-align:center;">Waiting for transfer</div>
+      `}
       
       <div class="div"></div>
       
@@ -1377,6 +1482,105 @@ function tryConnectInbox(){
     return;
   }
   startInboxSender(c);
+}
+
+function getActiveSessionType() {
+  if (inboxWs && inboxWs.readyState === 1) return { type: 'inbox', code: inboxWs._code };
+  if (active1to1Sender.ws && active1to1Sender.ws.readyState === 1) return { type: '1to1sender', code: active1to1Sender.code };
+  if (active1to1Receiver.ws && active1to1Receiver.ws.readyState === 1) return { type: '1to1receiver', code: active1to1Receiver.code };
+  if (activeInboxSender.ws && activeInboxSender.ws.readyState === 1) return { type: 'inboxsender', code: activeInboxSender.code };
+  return null;
+}
+
+function resumeActiveSession() {
+  const s = getActiveSessionType();
+  if (!s) return;
+  if (s.type === 'inbox') showInboxDashboard(s.code);
+  if (s.type === '1to1sender') {
+    showSendDonePersistent1to1(active1to1Sender.lastFile || { name: 'File', size: 0 }, s.code, active1to1Sender.dc, active1to1Sender.pc, active1to1Sender.ws);
+  }
+  if (s.type === '1to1receiver') {
+    showRecvDonePersistent1to1(active1to1Receiver.lastMeta || { name: 'File', size: 0 }, s.code, active1to1Receiver.dc, active1to1Receiver.pc, active1to1Receiver.ws);
+  }
+  if (s.type === 'inboxsender') {
+    showInboxSendDone(activeInboxSender.lastFile || { name: 'File', size: 0 }, s.code);
+  }
+}
+
+function previewInboxFile(senderId) {
+  const peer = inboxPeers.get(senderId);
+  if (peer && peer.blob && peer.meta) {
+    showPreviewModal(peer.blob, peer.meta.name);
+  }
+}
+
+function deleteInboxFile(senderId, elId) {
+  const el = $(elId);
+  if (el) el.remove();
+  
+  const peer = inboxPeers.get(senderId);
+  if (peer) {
+    peer.blob = null;
+    peer.chunks = [];
+  }
+  
+  const fileContainer = $('inbox-files');
+  if (fileContainer && fileContainer.children.length === 0) {
+    fileContainer.innerHTML = `
+      <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
+        No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
+      </div>`;
+  }
+}
+
+function preview1to1File() {
+  if (active1to1Receiver.lastBlob && active1to1Receiver.lastMeta) {
+    showPreviewModal(active1to1Receiver.lastBlob, active1to1Receiver.lastMeta.name);
+  }
+}
+
+function delete1to1File() {
+  active1to1Receiver.lastBlob = null;
+  showRecvDonePersistent1to1(null, active1to1Receiver.code, active1to1Receiver.dc, active1to1Receiver.pc, active1to1Receiver.ws);
+}
+
+function showPreviewModal(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const mime = blob.type;
+  
+  let content = '';
+  if (mime.startsWith('image/')) {
+    content = `<img src="${url}" style="max-width:100%; max-height:70vh; border-radius:8px; display:block; margin:0 auto; box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+  } else if (mime.startsWith('audio/')) {
+    content = `<audio controls autoplay src="${url}" style="width:100%; margin-top:1rem;"></audio>`;
+  } else if (mime.startsWith('video/')) {
+    content = `<video controls autoplay src="${url}" style="max-width:100%; max-height:70vh; border-radius:8px; display:block; margin:0 auto;"></video>`;
+  } else {
+    content = `<div style="text-align:center; padding:2rem; color:var(--m);">Preview not supported for this file type.</div>`;
+  }
+  
+  const modal = document.createElement('div');
+  modal.id = 'preview-modal';
+  modal.style.cssText = 'position:fixed; inset:0; background:rgba(7,7,14,0.85); backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center; z-index:9999; padding:1.5rem;';
+  modal.innerHTML = `
+    <div class="card fade" style="width:100%; max-width:600px; background:var(--bg2); border:1px solid var(--b); position:relative; padding:1.5rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <span style="font-family:Syne,sans-serif; font-size:0.95rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:80%;">${name}</span>
+        <button class="btn bg bsm" onclick="closePreviewModal()" style="border-radius:50%; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;">✕</button>
+      </div>
+      <div style="background:rgba(0,0,0,0.3); border-radius:var(--r); padding:1rem; display:flex; align-items:center; justify-content:center; min-height:150px;">
+        ${content}
+      </div>
+      <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+        <a href="${url}" download="${name}" class="btn ba" style="text-decoration:none; flex:1; text-align:center; display:flex; align-items:center; justify-content:center;">Save to Device</a>
+      </div>
+    </div>`;
+  
+  document.body.appendChild(modal);
+  window.closePreviewModal = () => {
+    modal.remove();
+    URL.revokeObjectURL(url);
+  };
 }
 
 showHome();
