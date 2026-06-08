@@ -36,20 +36,20 @@ body{background:var(--bg);color:var(--t);font-family:'DM Sans',system-ui,sans-se
 .ln{font-family:'Syne',sans-serif;font-size:1.25rem;font-weight:800;letter-spacing:-.02em;color:var(--t)}
 .tg{font-size:.74rem;color:var(--m);letter-spacing:.05em;text-transform:uppercase}
 .mg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem}
-.mb{background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:1.75rem 1rem;cursor:pointer;text-align:center;transition:all .2s;color:var(--t)}
+.mb{position:relative;background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:1.75rem 1rem;cursor:pointer;text-align:center;transition:all .2s;color:var(--t)}
 .mb:hover{border-color:var(--bh);background:var(--ad);transform:translateY(-2px)}
 .mb .ic{font-size:2rem;margin-bottom:.5rem}
 .mb .lb{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700}
 .mb .sb{font-size:.72rem;color:var(--m);margin-top:.2rem}
 .pills{display:flex;justify-content:center;gap:.5rem;flex-wrap:wrap;margin-top:1.5rem}
-.pill{background:var(--bg2);border:1px solid var(--b);border-radius:99px;padding:.28rem .75rem;font-size:.7rem;color:var(--m2);display:inline-flex;align-items:center;gap:0.35rem;position:relative;cursor:help;transition:all .15s}
-.pill:hover{color:var(--t);border-color:var(--bh);background:var(--ad)}
-.qmark{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:rgba(255,255,255,0.08);color:var(--m);font-size:0.55rem;font-weight:700;transition:all 0.15s;font-family:system-ui,sans-serif}
-.pill:hover .qmark{background:var(--a);color:var(--bg)}
-.pill::before{content:attr(data-tooltip);position:absolute;bottom:140%;left:50%;transform:translateX(-50%) translateY(5px);background:rgba(13,13,26,0.98);border:1px solid var(--b);color:var(--t);padding:0.55rem 0.8rem;border-radius:8px;font-size:0.68rem;width:220px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1000;line-height:1.35;font-weight:normal;white-space:normal}
-.pill:hover::before{opacity:1;transform:translateX(-50%) translateY(0)}
-.pill::after{content:'';position:absolute;bottom:140%;left:50%;transform:translate(-50%,100%) translateY(5px);border-width:5px;border-style:solid;border-color:rgba(13,13,26,0.98) transparent transparent transparent;opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1001}
-.pill:hover::after{opacity:1;transform:translate(-50%,100%) translateY(0)}
+.pill{background:var(--bg2);border:1px solid var(--b);border-radius:99px;padding:.28rem .75rem;font-size:.7rem;color:var(--m2)}
+.btn-qmark{position:absolute;top:12px;right:12px;width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,0.06);color:var(--m);font-size:0.58rem;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.15s;cursor:help;font-family:system-ui,sans-serif}
+.mb:hover .btn-qmark{background:rgba(255,255,255,0.12);color:var(--t)}
+.btn-qmark:hover{background:var(--a) !important;color:var(--bg) !important;transform:scale(1.15)}
+.btn-qmark::before{content:attr(data-tooltip);position:absolute;bottom:140%;right:0;transform:translateY(5px);background:rgba(13,13,26,0.98);border:1px solid var(--b);color:var(--t);padding:0.55rem 0.8rem;border-radius:8px;font-size:0.68rem;width:200px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1000;line-height:1.35;font-weight:normal;white-space:normal;font-family:'DM Sans',system-ui,sans-serif}
+.btn-qmark:hover::before{opacity:1;transform:translateY(0)}
+.btn-qmark::after{content:'';position:absolute;bottom:140%;right:3px;transform:translate(0,100%) translateY(5px);border-width:5px;border-style:solid;border-color:rgba(13,13,26,0.98) transparent transparent transparent;opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1001}
+.btn-qmark:hover::after{opacity:1;transform:translate(0,100%) translateY(0)}
 .dz{border:2px dashed var(--b);border-radius:var(--r);padding:2.75rem 1.5rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
 .dz::after{content:'';position:absolute;inset:0;background:var(--ad);opacity:0;transition:opacity .15s;pointer-events:none}
 .dz:hover,.dz.ov{border-color:var(--a);border-style:solid}
@@ -198,17 +198,29 @@ function showHome(){
     <div class="card fade">
       ${sessionBanner}
       <div class="mg">
-        <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send File</div><div class="sb">Generate room code</div></button>
-        <button class="mb" onclick="showSendToInbox()"><div class="ic">📤</div><div class="lb">Send to Inbox</div><div class="sb">Enter inbox code</div></button>
-        <button class="mb" onclick="showRecv()"><div class="ic">⬇️</div><div class="lb">Receive File</div><div class="sb">Enter room code</div></button>
-        <button class="mb" onclick="showCreateInbox()"><div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a drop dashboard</div></button>
+        <button class="mb" onclick="showSend()">
+          <span class="btn-qmark" data-tooltip="Direct 1-to-1 P2P file sharing. Generates a temporary room code for a receiver to connect and download your files directly." onclick="event.stopPropagation()">?</span>
+          <div class="ic">⬆️</div><div class="lb">Send File</div><div class="sb">Generate room code</div>
+        </button>
+        <button class="mb" onclick="showSendToInbox()">
+          <span class="btn-qmark" data-tooltip="Drop files into a receiver's active Inbox. Enter their 6-character Inbox Code to stream files directly to their dashboard." onclick="event.stopPropagation()">?</span>
+          <div class="ic">📤</div><div class="lb">Send to Inbox</div><div class="sb">Enter inbox code</div>
+        </button>
+        <button class="mb" onclick="showRecv()">
+          <span class="btn-qmark" data-tooltip="Connect to a sender's room code. Enter the code they shared to establish a secure P2P stream and download their files." onclick="event.stopPropagation()">?</span>
+          <div class="ic">⬇️</div><div class="lb">Receive File</div><div class="sb">Enter room code</div>
+        </button>
+        <button class="mb" onclick="showCreateInbox()">
+          <span class="btn-qmark" data-tooltip="Host a file drop dashboard. Generates a QR code and link so multiple people can stream files directly to your device." onclick="event.stopPropagation()">?</span>
+          <div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a drop dashboard</div>
+        </button>
       </div>
     </div>
     <div class="pills">
-      <span class="pill" data-tooltip="Files travel directly between sender and receiver browsers. No server middleman keeps your transfer 100% private.">🔒 End-to-end P2P <span class="qmark">?</span></span>
-      <span class="pill" data-tooltip="Stream files of any size directly from your device to the receiver. No upload size limits or storage caps.">⚡ Any file size <span class="qmark">?</span></span>
-      <span class="pill" data-tooltip="Files are never saved on a server disk. They transfer in real-time, leaving no digital footprint online.">🗑️ Never stored <span class="qmark">?</span></span>
-      <span class="pill" data-tooltip="Built on zero-cost WebRTC technology, ensuring the service remains 100% free with no ads or limitations.">💸 Free forever <span class="qmark">?</span></span>
+      <span class="pill">🔒 End-to-end P2P</span>
+      <span class="pill">⚡ Any file size</span>
+      <span class="pill">🗑️ Never stored</span>
+      <span class="pill">💸 Free forever</span>
     </div>`;
 }
 
