@@ -682,7 +682,21 @@ function showInboxDashboard(code) {
         for (const [senderId, peer] of inboxPeers) {
           if (peer.meta) {
             renderInboxFileEntry(senderId, peer);
-            if (peer.accepted) {
+            if (peer.disconnected) {
+              $(`accept-row-${peer.elId}`).style.display = 'none';
+              if (peer.blob) {
+                $(`badge-${peer.elId}`).className = 'bdg bok';
+                $(`badge-${peer.elId}`).textContent = 'Completed';
+                $(`completed-row-${peer.elId}`).style.display = 'flex';
+                if (peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'))) {
+                  $(`preview-btn-${peer.elId}`).style.display = 'block';
+                }
+              } else {
+                $(`badge-${peer.elId}`).className = 'bdg bwn';
+                $(`badge-${peer.elId}`).textContent = 'Disconnected';
+                $(`completed-row-${peer.elId}`).style.display = 'none';
+              }
+            } else if (peer.accepted) {
               $(`accept-row-${peer.elId}`).style.display = 'none';
               $(`progress-row-${peer.elId}`).style.display = 'block';
               const pct = peer.chunks.length > 0 ? Math.min(1, peer.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0) / peer.meta.size) : 0;
@@ -871,7 +885,7 @@ function setupInboxPeer(code, senderId) {
 }
 
 function updateInboxConnectedCount() {
-  const activeCount = Array.from(inboxPeers.values()).filter(p => p.pc.connectionState !== 'closed').length;
+  const activeCount = Array.from(inboxPeers.values()).filter(p => p.pc && p.pc.connectionState !== 'closed' && !p.disconnected).length;
   const el = $('inbox-status');
   if (el) {
     el.innerHTML = `<span class="dot dg pu"></span> Live Dashboard · ${activeCount} connected`;
@@ -1031,14 +1045,23 @@ function cleanupInboxPeer(senderId) {
   
   const badge = $(`badge-${peer.elId}`);
   if (badge) {
-    badge.className = 'bdg bwn';
-    badge.textContent = 'Disconnected';
+    if (peer.blob) {
+      badge.className = 'bdg bok';
+      badge.textContent = 'Completed';
+    } else {
+      badge.className = 'bdg bwn';
+      badge.textContent = 'Disconnected';
+    }
   }
   
   const acceptRow = $(`accept-row-${peer.elId}`);
   if (acceptRow) acceptRow.style.display = 'none';
   
-  inboxPeers.delete(senderId);
+  if (!peer.blob) {
+    inboxPeers.delete(senderId);
+  } else {
+    peer.disconnected = true;
+  }
   updateInboxConnectedCount();
 }
 
@@ -1596,11 +1619,7 @@ function deleteInboxFile(senderId, elId) {
   const el = $(elId);
   if (el) el.remove();
   
-  const peer = inboxPeers.get(senderId);
-  if (peer) {
-    peer.blob = null;
-    peer.chunks = [];
-  }
+  inboxPeers.delete(senderId);
   
   const fileContainer = $('inbox-files');
   if (fileContainer && fileContainer.children.length === 0) {

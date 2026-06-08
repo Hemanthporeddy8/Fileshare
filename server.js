@@ -281,6 +281,15 @@ setInterval(() => {
   if (n) console.log(`[Cleanup] Purged ${n} expired relay files`);
 }, 60_000);
 
+// Keep-alive heartbeat to prevent background tabs from disconnecting
+setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    }
+  });
+}, 20_000);
+
 http.listen(PORT, () => {
   console.log(`\n  ╔══════════════════════════════════╗`);
   console.log(`  ║   FileShare  ready on :${PORT}      ║`);
