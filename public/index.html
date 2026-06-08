@@ -42,7 +42,14 @@ body{background:var(--bg);color:var(--t);font-family:'DM Sans',system-ui,sans-se
 .mb .lb{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700}
 .mb .sb{font-size:.72rem;color:var(--m);margin-top:.2rem}
 .pills{display:flex;justify-content:center;gap:.5rem;flex-wrap:wrap;margin-top:1.5rem}
-.pill{background:var(--bg2);border:1px solid var(--b);border-radius:99px;padding:.28rem .75rem;font-size:.7rem;color:var(--m2)}
+.pill{background:var(--bg2);border:1px solid var(--b);border-radius:99px;padding:.28rem .75rem;font-size:.7rem;color:var(--m2);display:inline-flex;align-items:center;gap:0.35rem;position:relative;cursor:help;transition:all .15s}
+.pill:hover{color:var(--t);border-color:var(--bh);background:var(--ad)}
+.qmark{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:rgba(255,255,255,0.08);color:var(--m);font-size:0.55rem;font-weight:700;transition:all 0.15s;font-family:system-ui,sans-serif}
+.pill:hover .qmark{background:var(--a);color:var(--bg)}
+.pill::before{content:attr(data-tooltip);position:absolute;bottom:140%;left:50%;transform:translateX(-50%) translateY(5px);background:rgba(13,13,26,0.98);border:1px solid var(--b);color:var(--t);padding:0.55rem 0.8rem;border-radius:8px;font-size:0.68rem;width:220px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.5);opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1000;line-height:1.35;font-weight:normal;white-space:normal}
+.pill:hover::before{opacity:1;transform:translateX(-50%) translateY(0)}
+.pill::after{content:'';position:absolute;bottom:140%;left:50%;transform:translate(-50%,100%) translateY(5px);border-width:5px;border-style:solid;border-color:rgba(13,13,26,0.98) transparent transparent transparent;opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:1001}
+.pill:hover::after{opacity:1;transform:translate(-50%,100%) translateY(0)}
 .dz{border:2px dashed var(--b);border-radius:var(--r);padding:2.75rem 1.5rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
 .dz::after{content:'';position:absolute;inset:0;background:var(--ad);opacity:0;transition:opacity .15s;pointer-events:none}
 .dz:hover,.dz.ov{border-color:var(--a);border-style:solid}
@@ -154,6 +161,7 @@ const P2P_TO  = 60000;
 const CHARS   = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 const $    = id => document.getElementById(id);
+const esc  = s => (s || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 const root = () => $('root');
 const fmtB = b => { if(!b)return'—'; if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; if(b<1073741824)return(b/1048576).toFixed(1)+' MB'; return(b/1073741824).toFixed(2)+' GB'; };
 const fmtS = s => { if(s<1024)return s.toFixed(0)+' B/s'; if(s<1048576)return(s/1024).toFixed(0)+' KB/s'; return(s/1048576).toFixed(1)+' MB/s'; };
@@ -196,17 +204,26 @@ function showHome(){
         <button class="mb" onclick="showCreateInbox()"><div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a drop dashboard</div></button>
       </div>
     </div>
-    <div class="pills"><span class="pill">🔒 End-to-end P2P</span><span class="pill">⚡ Any file size</span><span class="pill">🗑️ Never stored</span><span class="pill">💸 Free forever</span></div>`;
+    <div class="pills">
+      <span class="pill" data-tooltip="Files travel directly between sender and receiver browsers. No server middleman keeps your transfer 100% private.">🔒 End-to-end P2P <span class="qmark">?</span></span>
+      <span class="pill" data-tooltip="Stream files of any size directly from your device to the receiver. No upload size limits or storage caps.">⚡ Any file size <span class="qmark">?</span></span>
+      <span class="pill" data-tooltip="Files are never saved on a server disk. They transfer in real-time, leaving no digital footprint online.">🗑️ Never stored <span class="qmark">?</span></span>
+      <span class="pill" data-tooltip="Built on zero-cost WebRTC technology, ensuring the service remains 100% free with no ads or limitations.">💸 Free forever <span class="qmark">?</span></span>
+    </div>`;
 }
 
 function showSend(){
   stopTimer();
+  const savedNickname = localStorage.getItem('fs_nickname') || '';
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
         <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send a file</span>
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
+      <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      
       <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDrop(event)">
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop your file here</div>
@@ -216,8 +233,24 @@ function showSend(){
     </div>`;
 }
 
-function onDrop(e){ e.preventDefault(); e.currentTarget.classList.remove('ov'); const f=e.dataTransfer.files?.[0]; if(f)startSend(f); }
-function onFP(e){ const f=e.target.files?.[0]; if(f)startSend(f); }
+function onDrop(e){ 
+  e.preventDefault(); 
+  e.currentTarget.classList.remove('ov'); 
+  const f=e.dataTransfer.files?.[0]; 
+  if(f) {
+    const nn = ($('sender-nickname')?.value || '').trim();
+    localStorage.setItem('fs_nickname', nn);
+    startSend(f); 
+  }
+}
+function onFP(e){ 
+  const f=e.target.files?.[0]; 
+  if(f) {
+    const nn = ($('sender-nickname')?.value || '').trim();
+    localStorage.setItem('fs_nickname', nn);
+    startSend(f); 
+  }
+}
 
 function startSend(file){
   const code=genC();
@@ -283,7 +316,7 @@ function runSender(file,code){
     dc.onopen=()=>{
       clearTimeout(timer);
       logD('Data channel opened! Sending metadata...');
-      dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream'}));
+      dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream',nickname:localStorage.getItem('fs_nickname')||null}));
       setSt('Receiver reviewing — waiting for accept…','db');
     };
     dc.onmessage=e=>{
@@ -453,7 +486,7 @@ function runReceiver(code){
               logD(`Received metadata: "${msg.name}" (${fmtB(msg.size)})`);
               $('rico').textContent=mIco(msg.mimeType);
               $('rname').textContent=msg.name;
-              $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:'');
+              $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:'')+(msg.nickname?' · From '+msg.nickname:'');
               $('finfo').style.display='block';
               setSt('File ready — click Accept','dg');
             }
@@ -596,7 +629,7 @@ function showInboxDashboard(code) {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem;">
         <div style="font-size: 0.8rem; color: var(--m); font-weight: 500;">Received Files</div>
         <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
-          <input type="checkbox" id="auto-accept" checked style="accent-color:var(--a);"> Auto-accept downloads
+          <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
         </label>
       </div>
       
@@ -777,7 +810,8 @@ function setupInboxPeer(code, senderId) {
           peer.meta = msg;
           peer.chunks = [];
           peer.lT = 0; peer.lR = 0; peer.spd = 0;
-          logD(`Incoming file from ${senderId}: "${msg.name}" (${fmtB(msg.size)})`);
+          const displayName = msg.nickname ? `${msg.nickname} (${senderId.slice(0, 8)})` : senderId.slice(0, 8);
+          logD(`Incoming file from ${displayName}: "${msg.name}" (${fmtB(msg.size)})`);
           
           const ph = $('inbox-placeholder');
           if (ph) ph.remove();
@@ -789,7 +823,8 @@ function setupInboxPeer(code, senderId) {
           }
         }
         else if (msg.type === 'done') {
-          logD(`P2P download from ${senderId} complete.`);
+          const displayName = peer.meta.nickname ? `${peer.meta.nickname} (${senderId.slice(0, 8)})` : senderId.slice(0, 8);
+          logD(`P2P download from ${displayName} complete.`);
           const blob = new Blob(peer.chunks, { type: peer.meta.mimeType || 'application/octet-stream' });
           peer.blob = blob;
           updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
@@ -846,7 +881,8 @@ function renderInboxFileEntry(senderId, peer) {
   const formattedName = peer.meta.name;
   const formattedSize = fmtB(peer.meta.size);
   const icon = mIco(peer.meta.mimeType);
-  const displaySender = senderId.slice(0, 8);
+  const nickname = peer.meta.nickname ? esc(peer.meta.nickname.trim()) : '';
+  const displaySender = nickname ? `${nickname} (${esc(senderId.slice(0, 8))})` : esc(senderId.slice(0, 8));
   
   entry.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
@@ -1008,12 +1044,16 @@ function closeInbox() {
 
 function startInboxSender(code) {
   stopTimer();
+  const savedNickname = localStorage.getItem('fs_nickname') || '';
   root().innerHTML = `
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
         <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send to Inbox</span>
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
+      <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      
       <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDropInbox(event, '${code}')">
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop your file here</div>
@@ -1025,10 +1065,20 @@ function startInboxSender(code) {
 
 function onDropInbox(e, code) {
   e.preventDefault(); e.currentTarget.classList.remove('ov');
-  const f = e.dataTransfer.files?.[0]; if (f) startInboxSenderFlow(f, code);
+  const f = e.dataTransfer.files?.[0]; 
+  if (f) {
+    const nn = ($('sender-nickname')?.value || '').trim();
+    localStorage.setItem('fs_nickname', nn);
+    startInboxSenderFlow(f, code);
+  }
 }
 function onFPInbox(e, code) {
-  const f = e.target.files?.[0]; if (f) startInboxSenderFlow(f, code);
+  const f = e.target.files?.[0]; 
+  if (f) {
+    const nn = ($('sender-nickname')?.value || '').trim();
+    localStorage.setItem('fs_nickname', nn);
+    startInboxSenderFlow(f, code);
+  }
 }
 
 function startInboxSenderFlow(file, code) {
@@ -1186,7 +1236,8 @@ function sendInboxFileDirectly(file) {
     type: 'meta',
     name: file.name,
     size: file.size,
-    mimeType: file.type || 'application/octet-stream'
+    mimeType: file.type || 'application/octet-stream',
+    nickname: localStorage.getItem('fs_nickname') || null
   }));
   
   dc.onmessage = e => {
@@ -1304,7 +1355,7 @@ function send1to1PersistentFile(file) {
   
   startTimer();
   logD('Sending metadata for new file...');
-  dc.send(JSON.stringify({ type: 'meta', name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream' }));
+  dc.send(JSON.stringify({ type: 'meta', name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream', nickname: localStorage.getItem('fs_nickname') || null }));
   setSt('Receiver reviewing — waiting for accept…', 'db');
   
   dc.onmessage = e => {
@@ -1402,7 +1453,7 @@ function setup1to1ReceiverDC(dc, lastMeta) {
         
         $('rico').textContent = mIco(msg.mimeType);
         $('rname').textContent = msg.name;
-        $('rmeta').textContent = fmtB(msg.size) + (msg.mimeType ? ' · ' + msg.mimeType : '');
+        $('rmeta').textContent = fmtB(msg.size) + (msg.mimeType ? ' · ' + msg.mimeType : '') + (msg.nickname ? ' · From ' + msg.nickname : '');
         $('finfo').style.display = 'block';
         $('abtn').style.display = 'block';
         $('pw').style.display = 'none';
@@ -1461,14 +1512,18 @@ function disconnect1to1Receiver() {
 
 function showSendToInbox(){
   stopTimer();
+  const savedNickname = localStorage.getItem('fs_nickname') || '';
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
         <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send to Inbox</span>
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
-      <div class="slb" style="margin-bottom:0.45rem">Enter the 6-character Inbox Code</div>
-      <input class="ci" id="ib-code" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryConnectInbox()">
+      <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      
+      <div class="slb" style="margin-bottom:0.15rem">Enter the 6-character Inbox Code</div>
+      <input class="ci" id="ib-code" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryConnectInbox()" style="margin:0.4rem 0 1rem;">
       <button class="btn ba" onclick="tryConnectInbox()">Next →</button>
     </div>`;
   setTimeout(()=>$('ib-code')?.focus(),50);
@@ -1483,6 +1538,8 @@ function tryConnectInbox(){
     setTimeout(()=>el.style.borderColor='',1400);
     return;
   }
+  const nn = ($('sender-nickname')?.value || '').trim();
+  localStorage.setItem('fs_nickname', nn);
   startInboxSender(c);
 }
 
