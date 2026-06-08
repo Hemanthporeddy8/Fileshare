@@ -118,6 +118,31 @@ const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0
   ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
   : 'wss://fileshare-qhgn.onrender.com/ws';
 
+let logTimer = null, logSeconds = 0;
+function logD(msg) {
+  const dbg = document.getElementById('dbg');
+  if (!dbg) return;
+  dbg.style.display = 'block';
+  const time = new Date().toLocaleTimeString([], { hour12: false, second: '2-digit', minute: '2-digit' });
+  dbg.innerHTML += `<div>[${time}] ${msg}</div>`;
+  dbg.scrollTop = dbg.scrollHeight;
+}
+function startTimer() {
+  stopTimer();
+  logSeconds = 0;
+  logTimer = setInterval(() => {
+    logSeconds++;
+    const el = document.getElementById('timer-val');
+    if (el) el.textContent = `${logSeconds}s`;
+  }, 1000);
+}
+function stopTimer() {
+  if (logTimer) {
+    clearInterval(logTimer);
+    logTimer = null;
+  }
+}
+
 const ICE = { iceServers:[
   {urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302']},
   {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
@@ -141,6 +166,7 @@ function setProg(r,lbl,spd,eta){ const pw=$('pw'); if(!pw)return; pw.style.displ
 function saveBlob(blob,name){ const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:name}); document.body.appendChild(a);a.click();document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),60000); }
 
 function showHome(){
+  stopTimer();
   const p=new URLSearchParams(location.search);
   const qc=p.get('code')?.toUpperCase().slice(0,6);
   const ri=p.get('relay');
@@ -157,6 +183,7 @@ function showHome(){
 }
 
 function showSend(){
+  stopTimer();
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
@@ -193,7 +220,8 @@ function startSend(file){
         </div>
         <div style="text-align:center;flex-shrink:0"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to receive</div></div>
       </div>
-      <div class="stl" id="stl"><span class="dot dy pu"></span><span id="stx">Connecting…</span></div>
+      <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
     </div>`;
   $('fic').textContent=mIco(file.type);
@@ -211,28 +239,90 @@ function startSend(file){
 
 function runSender(file,code){
   let pc=null,dc=null,ws=null,done=false,timer=null;
+  startTimer();
+  logD('Connecting to signaling server...');
   ws=new WebSocket(`${SIG}?code=${code}&role=sender`);
   ws.onopen=()=>{
+    logD('Connected to signaling server.');
+    logD('Waiting for receiver to join room...');
     setSt('Waiting — share the code or QR with the receiver','dy');
     pc=new RTCPeerConnection(ICE);
     dc=pc.createDataChannel('file',{ordered:true});
     dc.binaryType='arraybuffer';
-    timer=setTimeout(()=>{ if(!done){ setSt('P2P connection timed out. Please check network compatibility (WiFi/Mobile Data).','dr'); } },P2P_TO);
-    pc.onicecandidate=({candidate})=>{ if(candidate&&ws.readyState===1) ws.send(JSON.stringify({type:'ice',candidate})); };
-    pc.onconnectionstatechange=()=>{ if(['disconnected','failed','closed'].includes(pc.connectionState)&&!done) setSt('Connection lost.','dr'); };
-    dc.onopen=()=>{ clearTimeout(timer); dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream'})); setSt('Receiver reviewing — waiting for accept…','db'); };
-    dc.onmessage=e=>{ if(typeof e.data!=='string')return; const m=JSON.parse(e.data); if(m.type==='accept'){ setSt('Transferring via P2P…','dg'); sendChunks(dc,file,()=>{ done=true; ws.close(); showSendDone(file,'p2p'); }); }};
-    dc.onclose=()=>{ if(!done)setSt('Channel closed.','dr'); };
-    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>ws.send(JSON.stringify({type:'offer',sdp:pc.localDescription}))).catch(e=>setSt('Error: '+e.message,'dr'));
+    timer=setTimeout(()=>{ if(!done){ setSt('P2P connection timed out. Please check network compatibility (WiFi/Mobile Data).','dr'); logD('Error: Connection timed out.'); stopTimer(); } },P2P_TO);
+    pc.onicecandidate=({candidate})=>{
+      if(candidate&&ws.readyState===1) {
+        logD('Gathered network route (ICE candidate)');
+        ws.send(JSON.stringify({type:'ice',candidate}));
+      }
+    };
+    pc.onconnectionstatechange=()=>{
+      logD('Connection state changed: ' + pc.connectionState);
+      if(['disconnected','failed','closed'].includes(pc.connectionState)&&!done) {
+        setSt('Connection lost.','dr');
+        stopTimer();
+      }
+    };
+    dc.onopen=()=>{
+      clearTimeout(timer);
+      logD('Data channel opened! Sending metadata...');
+      dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream'}));
+      setSt('Receiver reviewing — waiting for accept…','db');
+    };
+    dc.onmessage=e=>{
+      if(typeof e.data!=='string')return;
+      const m=JSON.parse(e.data);
+      if(m.type==='accept'){
+        logD('Receiver accepted file. Starting direct P2P stream...');
+        setSt('Transferring via P2P…','dg');
+        sendChunks(dc,file,()=>{
+          done=true;
+          ws.close();
+          stopTimer();
+          showSendDone(file,'p2p');
+        });
+      }
+    };
+    dc.onclose=()=>{
+      logD('Data channel closed.');
+      if(!done) { setSt('Channel closed.','dr'); stopTimer(); }
+    };
+    logD('Creating WebRTC connection offer...');
+    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>{
+      logD('Offer created. Sending to signaling server...');
+      ws.send(JSON.stringify({type:'offer',sdp:pc.localDescription}));
+    }).catch(e=>{
+      setSt('Error: '+e.message,'dr');
+      logD('Offer Error: ' + e.message);
+      stopTimer();
+    });
   };
   let pIce=[];
   ws.onmessage=async({data})=>{
     const m=JSON.parse(data);
-    if(m.type==='answer'){ setSt('Receiver found — forming P2P…','dy'); await pc.setRemoteDescription(m.sdp).catch(()=>{}); for(const c of pIce){try{await pc.addIceCandidate(c);}catch{}} pIce=[]; }
-    else if(m.type==='ice'){ if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate); }
-    else if(m.type==='peer-left'&&!done) setSt('Receiver disconnected.','dr');
+    if(m.type==='answer'){
+      logD('Receiver joined! Received handshake answer.');
+      setSt('Receiver found — forming P2P…','dy');
+      await pc.setRemoteDescription(m.sdp).catch(()=>{});
+      logD('Applying network routes...');
+      for(const c of pIce){try{await pc.addIceCandidate(c);}catch{}}
+      pIce=[];
+    }
+    else if(m.type==='ice'){
+      logD('Received peer network route (ICE)');
+      if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate);
+    }
+    else if(m.type==='peer-left'&&!done) {
+      logD('Receiver disconnected.');
+      setSt('Receiver disconnected.','dr');
+      stopTimer();
+    }
   };
-  ws.onerror=()=>setSt('Cannot connect to signal server.','dr');
+  ws.onerror=()=>{
+    logD('Error: Cannot connect to signaling server.');
+    setSt('Cannot connect to signal server.','dr');
+    stopTimer();
+  };
 }
 
 function sendChunks(dc,file,onDone){
@@ -280,6 +370,7 @@ function showSendDone(file,mode,relayId){
 }
 
 function showRecv(){
+  stopTimer();
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive a file</span><button class="btn bg bsm" onclick="showHome()">← Back</button></div>
@@ -297,7 +388,8 @@ function startRecv(code){
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Connecting…</span><button class="btn bg bsm" onclick="showHome()">Cancel</button></div>
       <div class="cb" style="margin-bottom:.85rem"><div><div class="cl">Room code</div><div class="cv">${code}</div></div></div>
-      <div class="stl" id="stl"><span class="dot dy pu"></span><span id="stx">Connecting to signal server…</span></div>
+      <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting to signal server…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="finfo" style="display:none">
         <div class="div"></div>
         <div class="fr"><span class="fic" id="rico">📁</span><div><div class="fn" id="rname">—</div><div class="fm" id="rmeta">—</div></div></div>
@@ -312,37 +404,97 @@ function runReceiver(code){
   let pc=null,ws=null,dc=null,meta=null;
   const chunks=[];let rcvd=0,spd=0,lR=0,lT=0;
   let pIce=[],accepted=false;
+  startTimer();
+  logD('Connecting to signaling server...');
   ws=new WebSocket(`${SIG}?code=${code}&role=receiver`);
-  ws.onopen=()=>setSt('Connected — waiting for sender…','dy');
+  ws.onopen=()=>{
+    logD('Connected to signaling server.');
+    logD('Waiting for sender offer...');
+    setSt('Connected — waiting for sender…','dy');
+  };
   ws.onmessage=async({data})=>{
     const m=JSON.parse(data);
     if(m.type==='offer'){
+      logD('Sender found! Received handshake offer.');
       setSt('Sender found — forming P2P…','dy');
       pc=new RTCPeerConnection(ICE);
-      pc.onicecandidate=({candidate})=>{ if(candidate&&ws.readyState===1) ws.send(JSON.stringify({type:'ice',candidate})); };
+      pc.onicecandidate=({candidate})=>{
+        if(candidate&&ws.readyState===1) {
+          logD('Gathered network route (ICE candidate)');
+          ws.send(JSON.stringify({type:'ice',candidate}));
+        }
+      };
       pc.ondatachannel=({channel})=>{
         dc=channel; dc.binaryType='arraybuffer';
+        logD('P2P signaling channel opened!');
         setSt('P2P connected!','dg');
         dc.onmessage=e=>{
           const d=e.data;
           if(typeof d==='string'){
             const msg=JSON.parse(d);
-            if(msg.type==='meta'){ meta=msg; $('rico').textContent=mIco(msg.mimeType); $('rname').textContent=msg.name; $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:''); $('finfo').style.display='block'; setSt('File ready — click Accept','dg'); }
-            if(msg.type==='done'&&meta){ setProg(1,'Saving…'); const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'}); saveBlob(blob,meta.name); ws.close(); showRecvDone(meta,'p2p'); }
-          } else { if(!lT)lT=Date.now(); chunks.push(d); rcvd+=d.byteLength; const now=Date.now(),dt=now-lT; if(dt>=400){spd=((rcvd-lR)/dt)*1000;lR=rcvd;lT=now;} const eta=spd>0&&meta?.size?Math.round((meta.size-rcvd)/spd):0; if(meta?.size)setProg(rcvd/meta.size,'Receiving…',spd,eta); }
+            if(msg.type==='meta'){
+              meta=msg;
+              logD(`Received metadata: "${msg.name}" (${fmtB(msg.size)})`);
+              $('rico').textContent=mIco(msg.mimeType);
+              $('rname').textContent=msg.name;
+              $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:'');
+              $('finfo').style.display='block';
+              setSt('File ready — click Accept','dg');
+            }
+            if(msg.type==='done'&&meta){
+              logD('P2P download complete. Saving file...');
+              setProg(1,'Saving…');
+              const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'});
+              saveBlob(blob,meta.name);
+              ws.close();
+              stopTimer();
+              showRecvDone(meta,'p2p');
+            }
+          } else {
+            if(!lT) { lT=Date.now(); logD('Receiving file data stream...'); }
+            chunks.push(d); rcvd+=d.byteLength;
+            const now=Date.now(),dt=now-lT;
+            if(dt>=400){spd=((rcvd-lR)/dt)*1000;lR=rcvd;lT=now;}
+            const eta=spd>0&&meta?.size?Math.round((meta.size-rcvd)/spd):0;
+            if(meta?.size)setProg(rcvd/meta.size,'Receiving…',spd,eta);
+          }
         };
-        dc.onclose=()=>setSt('Channel closed.','dr');
+        dc.onclose=()=>{
+          logD('Data channel closed.');
+          setSt('Channel closed.','dr');
+          stopTimer();
+        };
       };
+      logD('Applying sender handshake...');
       await pc.setRemoteDescription(m.sdp).catch(()=>{});
-      const ans=await pc.createAnswer().catch(()=>null); if(!ans)return;
+      const ans=await pc.createAnswer().catch(()=>null);
+      if(!ans) { logD('Error creating handshake answer.'); return; }
+      logD('Creating handshake answer...');
       await pc.setLocalDescription(ans).catch(()=>{});
+      logD('Sending answer to signaling server...');
       ws.send(JSON.stringify({type:'answer',sdp:pc.localDescription}));
+      logD('Applying network routes...');
       for(const c of pIce){try{await pc.addIceCandidate(c);}catch{}} pIce=[];
-    } else if(m.type==='ice'){ if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate); }
-    else if(m.type==='peer-left') setSt('Sender disconnected.','dr');
+    } else if(m.type==='ice'){
+      logD('Received peer network route (ICE)');
+      if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate);
+    } else if(m.type==='peer-left') {
+      logD('Sender disconnected.');
+      setSt('Sender disconnected.','dr');
+      stopTimer();
+    }
   };
-  ws.onerror=()=>setSt('Cannot connect to signal server.','dr');
-  window.doAccept=()=>{ if(!dc||dc.readyState!=='open')return; $('abtn').style.display='none'; $('pw').style.display='block'; dc.send(JSON.stringify({type:'accept'})); setSt('Receiving…','dg'); };
+  ws.onerror=()=>{
+    logD('Error: Cannot connect to signaling server.');
+    setSt('Cannot connect to signal server.','dr');
+    stopTimer();
+  };
+  window.doAccept=()=>{
+    if(!dc||dc.readyState!=='open')return;
+    logD('Accepting download. Starting stream request...');
+    $('abtn').style.display='none'; $('pw').style.display='block';
+    dc.send(JSON.stringify({type:'accept'})); setSt('Receiving…','dg');
+  };
 }
 
 function startRelayRecv(relayId){
