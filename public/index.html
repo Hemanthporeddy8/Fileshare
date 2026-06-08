@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2322d3ee'/><path d='M16 6v16M10 14l6-8 6 8M8 26h16' stroke='%230a0a14' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="/qr-generator.js"></script>
+<script src="/qrcode.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -191,13 +191,21 @@ function startSend(file){
           <div class="slb">Or share this link</div>
           <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
         </div>
-        <div style="text-align:center;flex-shrink:0"><div class="qrw"><canvas id="qrc"></canvas></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to receive</div></div>
+        <div style="text-align:center;flex-shrink:0"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to receive</div></div>
       </div>
       <div class="stl" id="stl"><span class="dot dy pu"></span><span id="stx">Connecting…</span></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
     </div>`;
   $('fic').textContent=mIco(file.type);
-  QRCode.toCanvas($('qrc'),url,{width:130,margin:1,color:{dark:'#000000',light:'#ffffff'}});
+  $('qrc').innerHTML = '';
+  new QRCode($('qrc'), {
+    text: url,
+    width: 130,
+    height: 130,
+    colorDark : "#000000",
+    colorLight : "#ffffff",
+    correctLevel : QRCode.CorrectLevel.M
+  });
   runSender(file,code);
 }
 
