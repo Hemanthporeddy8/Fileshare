@@ -11,7 +11,7 @@ const os         = require('os');
 const PORT        = parseInt(process.env.PORT || '3000', 10);
 const UPLOADS_DIR = path.join(os.tmpdir(), 'fileshare_relay');
 const FILE_TTL    = 10 * 60 * 1000;
-const ROOM_TTL    = 15 * 60 * 1000;
+const ROOM_TTL    = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_RELAY   = parseInt(process.env.MAX_RELAY_MB || '500', 10) * 1024 * 1024;
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -62,53 +62,198 @@ wss.on('connection', (ws, req) => {
     role = url.searchParams.get('role');
   } catch { ws.close(1008, 'Bad URL'); return; }
 
-  if (!code || !/^[A-Z0-9]{6}$/.test(code) || !['sender','receiver'].includes(role)) {
+  if (!code || !/^[A-Z0-9]{6}$/.test(code) || !['sender','receiver','inbox'].includes(role)) {
     ws.close(1008, 'Bad params'); return;
   }
 
   let room = rooms.get(code);
   if (!room) {
-    room = { sender: null, receiver: null, timer: null, buffer: [] };
+    room = { sender: null, receiver: null, inbox: null, senders: new Map(), timer: null, buffer: [] };
     rooms.set(code, room);
     room.timer = setTimeout(() => destroyRoom(code), ROOM_TTL);
   }
 
-  if (role === 'sender'   && room.sender?.readyState   === WebSocket.OPEN) { ws.close(1008, 'Sender taken');   return; }
-  if (role === 'receiver' && room.receiver?.readyState === WebSocket.OPEN) { ws.close(1008, 'Receiver taken'); return; }
+  const isInbox = url.searchParams.get('isInbox') === 'true';
+  const senderId = url.searchParams.get('senderId');
+  const isInboxSender = (role === 'sender' && (isInbox || room.inbox || senderId));
 
-  room[role] = ws;
-  ws._code = code; ws._role = role;
+  if (role === 'inbox' && room.inbox?.readyState === WebSocket.OPEN) {
+    ws.close(1008, 'Inbox taken'); return;
+  }
+  if (role === 'receiver' && room.receiver?.readyState === WebSocket.OPEN) {
+    ws.close(1008, 'Receiver taken'); return;
+  }
+  if (role === 'sender' && !isInboxSender && room.sender?.readyState === WebSocket.OPEN) {
+    ws.close(1008, 'Sender taken'); return;
+  }
+  if (role === 'sender' && isInboxSender) {
+    if (!senderId) {
+      ws.close(1008, 'Sender ID required for inbox mode'); return;
+    }
+    if (room.senders.get(senderId)?.readyState === WebSocket.OPEN) {
+      ws.close(1008, 'Sender ID taken'); return;
+    }
+  }
 
-  // Send any buffered messages intended for this role
-  if (room.buffer && room.buffer.length > 0) {
-    room.buffer.forEach(msg => {
-      if (msg.role !== role) {
-        ws.send(msg.data, { binary: msg.binary });
+  ws._code = code;
+  ws._role = role;
+
+  if (role === 'inbox') {
+    room.inbox = ws;
+    // Flush any buffered messages from senders to the inbox
+    if (room.buffer && room.buffer.length > 0) {
+      room.buffer.forEach(msg => {
+        if (msg.role === 'sender') {
+          if (!msg.binary) {
+            try {
+              const parsed = JSON.parse(msg.data.toString());
+              parsed.senderId = msg.senderId;
+              ws.send(JSON.stringify(parsed));
+            } catch {
+              ws.send(msg.data, { binary: msg.binary });
+            }
+          } else {
+            ws.send(msg.data, { binary: msg.binary });
+          }
+        }
+      });
+      room.buffer = room.buffer.filter(msg => msg.role !== 'sender');
+    }
+    // Notify about any existing senders that connected before the inbox receiver
+    for (const [sId, sWs] of room.senders) {
+      if (sWs.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'peer-joined', senderId: sId }));
       }
-    });
-    // Clear the messages we just sent
-    room.buffer = room.buffer.filter(msg => msg.role === role);
+    }
+  } else if (role === 'receiver') {
+    room.receiver = ws;
+    // Flush buffered messages for receiver
+    if (room.buffer && room.buffer.length > 0) {
+      room.buffer.forEach(msg => {
+        if (msg.role === 'sender') {
+          ws.send(msg.data, { binary: msg.binary });
+        }
+      });
+      room.buffer = room.buffer.filter(msg => msg.role !== 'sender');
+    }
+  } else if (role === 'sender' && isInboxSender) {
+    ws._senderId = senderId;
+    ws._isInboxSender = true;
+    room.senders.set(senderId, ws);
+    // Flush buffered messages from inbox to this sender
+    if (room.buffer && room.buffer.length > 0) {
+      room.buffer.forEach(msg => {
+        if (msg.role === 'inbox' && msg.targetSenderId === senderId) {
+          ws.send(msg.data, { binary: msg.binary });
+        }
+      });
+      room.buffer = room.buffer.filter(msg => !(msg.role === 'inbox' && msg.targetSenderId === senderId));
+    }
+    // Notify inbox receiver that this sender joined
+    if (room.inbox?.readyState === WebSocket.OPEN) {
+      room.inbox.send(JSON.stringify({ type: 'peer-joined', senderId }));
+    }
+  } else {
+    // 1-to-1 sender
+    room.sender = ws;
+    // Flush buffered messages for sender
+    if (room.buffer && room.buffer.length > 0) {
+      room.buffer.forEach(msg => {
+        if (msg.role === 'receiver') {
+          ws.send(msg.data, { binary: msg.binary });
+        }
+      });
+      room.buffer = room.buffer.filter(msg => msg.role !== 'receiver');
+    }
   }
 
   ws.on('message', (data, binary) => {
     const r = rooms.get(code); if (!r) return;
-    const other = role === 'sender' ? r.receiver : r.sender;
-    if (other?.readyState === WebSocket.OPEN) {
-      other.send(data, { binary });
+    if (role === 'inbox') {
+      try {
+        const parsed = JSON.parse(data.toString());
+        const targetSenderId = parsed.targetSenderId;
+        if (targetSenderId) {
+          const senderWs = r.senders.get(targetSenderId);
+          if (senderWs?.readyState === WebSocket.OPEN) {
+            senderWs.send(data, { binary });
+          } else {
+            if (!r.buffer) r.buffer = [];
+            r.buffer.push({ role: 'inbox', targetSenderId, data, binary });
+          }
+        }
+      } catch (err) {
+        console.error('[Inbox] Error parsing receiver message', err);
+      }
+    } else if (role === 'receiver') {
+      const other = r.sender;
+      if (other?.readyState === WebSocket.OPEN) {
+        other.send(data, { binary });
+      } else {
+        if (!r.buffer) r.buffer = [];
+        r.buffer.push({ role: 'receiver', data, binary });
+      }
+    } else if (ws._isInboxSender) {
+      const other = r.inbox;
+      if (other?.readyState === WebSocket.OPEN) {
+        // Inject senderId into the message string if it's JSON
+        if (!binary) {
+          try {
+            const parsed = JSON.parse(data.toString());
+            parsed.senderId = ws._senderId;
+            other.send(JSON.stringify(parsed));
+          } catch {
+            other.send(data, { binary });
+          }
+        } else {
+          other.send(data, { binary });
+        }
+      } else {
+        if (!r.buffer) r.buffer = [];
+        r.buffer.push({ role: 'sender', senderId: ws._senderId, data, binary });
+      }
     } else {
-      // Buffer messages for the other peer when they connect
-      if (!r.buffer) r.buffer = [];
-      r.buffer.push({ role, data, binary });
+      // 1-to-1 sender
+      const other = r.receiver;
+      if (other?.readyState === WebSocket.OPEN) {
+        other.send(data, { binary });
+      } else {
+        if (!r.buffer) r.buffer = [];
+        r.buffer.push({ role: 'sender', data, binary });
+      }
     }
   });
 
   ws.on('close', () => {
     const r = rooms.get(code); if (!r) return;
-    r[role] = null;
-    const other = role === 'sender' ? r.receiver : r.sender;
-    if (other?.readyState === WebSocket.OPEN)
-      other.send(JSON.stringify({ type: 'peer-left', role }));
-    if (!r.sender && !r.receiver) destroyRoom(code);
+    if (role === 'inbox') {
+      r.inbox = null;
+      for (const [, sWs] of r.senders) {
+        if (sWs.readyState === WebSocket.OPEN) {
+          sWs.send(JSON.stringify({ type: 'peer-left', role: 'inbox' }));
+        }
+      }
+    } else if (ws._isInboxSender) {
+      r.senders.delete(ws._senderId);
+      if (r.inbox?.readyState === WebSocket.OPEN) {
+        r.inbox.send(JSON.stringify({ type: 'peer-left', senderId: ws._senderId }));
+      }
+    } else if (role === 'receiver') {
+      r.receiver = null;
+      if (r.sender?.readyState === WebSocket.OPEN) {
+        r.sender.send(JSON.stringify({ type: 'peer-left', role: 'receiver' }));
+      }
+    } else if (role === 'sender') {
+      r.sender = null;
+      if (r.receiver?.readyState === WebSocket.OPEN) {
+        r.receiver.send(JSON.stringify({ type: 'peer-left', role: 'sender' }));
+      }
+    }
+
+    const hasActiveSenders = Array.from(r.senders.values()).some(s => s.readyState === WebSocket.OPEN);
+    if (!r.sender && !r.receiver && !r.inbox && !hasActiveSenders) {
+      destroyRoom(code);
+    }
   });
 
   ws.on('error', () => ws.terminate());
@@ -117,7 +262,10 @@ wss.on('connection', (ws, req) => {
 function destroyRoom(code) {
   const r = rooms.get(code); if (!r) return;
   clearTimeout(r.timer);
-  [r.sender, r.receiver].forEach(c => { if (c?.readyState === WebSocket.OPEN) c.close(1001, 'Session ended'); });
+  [r.sender, r.receiver, r.inbox].forEach(c => { if (c?.readyState === WebSocket.OPEN) c.close(1001, 'Session ended'); });
+  for (const [, sWs] of r.senders) {
+    if (sWs?.readyState === WebSocket.OPEN) sWs.close(1001, 'Session ended');
+  }
   rooms.delete(code);
 }
 

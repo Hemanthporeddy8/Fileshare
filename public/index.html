@@ -170,13 +170,16 @@ function showHome(){
   const p=new URLSearchParams(location.search);
   const qc=p.get('code')?.toUpperCase().slice(0,6);
   const ri=p.get('relay');
+  const ib=p.get('inbox')?.toUpperCase().slice(0,6);
   if(ri) return startRelayRecv(ri);
   if(qc&&/^[A-Z0-9]{6}$/.test(qc)) return startRecv(qc);
+  if(ib&&/^[A-Z0-9]{6}$/.test(ib)) return startInboxSender(ib);
   root().innerHTML=`
     <div class="card fade">
       <div class="mg">
         <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send</div><div class="sb">Pick a file</div></button>
         <button class="mb" onclick="showRecv()"><div class="ic">⬇️</div><div class="lb">Receive</div><div class="sb">Enter a code</div></button>
+        <button class="mb" style="grid-column: span 2;" onclick="showCreateInbox()"><div class="ic">📥</div><div class="lb">Create Inbox Dashboard</div><div class="sb">Multi-device file drop inbox</div></button>
       </div>
     </div>
     <div class="pills"><span class="pill">🔒 End-to-end P2P</span><span class="pill">⚡ Any file size</span><span class="pill">🗑️ Never stored</span><span class="pill">💸 Free forever</span></div>`;
@@ -277,9 +280,8 @@ function runSender(file,code){
         setSt('Transferring via P2P…','dg');
         sendChunks(dc,file,()=>{
           done=true;
-          ws.close();
           stopTimer();
-          showSendDone(file,'p2p');
+          showSendDonePersistent1to1(file, code, dc, pc, ws);
         });
       }
     };
@@ -446,9 +448,7 @@ function runReceiver(code){
               setProg(1,'Saving…');
               const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'});
               saveBlob(blob,meta.name);
-              ws.close();
-              stopTimer();
-              showRecvDone(meta,'p2p');
+              showRecvDonePersistent1to1(meta, code, dc, pc, ws);
             }
           } else {
             if(!lT) { lT=Date.now(); logD('Receiving file data stream...'); }
@@ -535,6 +535,820 @@ function showRecvDone(info,mode){
       <button class="btn ba" onclick="showRecv()">Receive another</button>
       <button class="btn bg mt1" onclick="showHome()">← Home</button>
     </div>`;
+}
+
+// Persistent connections & Inbox Dashboard implementation
+let active1to1Sender = { code: null, dc: null, pc: null, ws: null };
+let active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
+let activeInboxSender = { code: null, senderId: null, ws: null, pc: null, dc: null, connected: false };
+let inboxWs = null;
+let inboxPeers = new Map(); // senderId -> { pc, dc, chunks, meta, elId, pIce, accepted, lT, lR, spd }
+
+function showCreateInbox() {
+  const code = genC();
+  showInboxDashboard(code);
+}
+
+function showInboxDashboard(code) {
+  stopTimer();
+  const url = `${location.origin}${location.pathname}?inbox=${code}`;
+  root().innerHTML = `
+    <div class="card fade" style="max-width: 600px;">
+      <div class="rsb" style="margin-bottom: 1rem">
+        <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
+        <button class="btn bg bsm" onclick="closeInbox()">Stop Inbox</button>
+      </div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
+      
+      <div style="display:flex;gap:1.2rem;align-items:flex-start;margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <div style="flex:1.2;min-width:240px">
+          <div class="cb" style="margin: 0 0 0.75rem 0;">
+            <div>
+              <div class="cl">Inbox Code</div>
+              <div class="cv" style="font-size: 1.6rem;">${code}</div>
+            </div>
+            <button class="btn bg bsm" onclick="cpText('${code}',this)">Copy</button>
+          </div>
+          <div class="slb">Share this drop link</div>
+          <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
+        </div>
+        <div style="text-align:center;flex-shrink:0;margin:0 auto"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to drop files</div></div>
+      </div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem;">
+        <div style="font-size: 0.8rem; color: var(--m); font-weight: 500;">Received Files</div>
+        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
+          <input type="checkbox" id="auto-accept" checked style="accent-color:var(--a);"> Auto-accept downloads
+        </label>
+      </div>
+      
+      <div id="inbox-files" style="display:flex; flex-direction:column; gap:0.75rem; max-height:280px; overflow-y:auto; padding-right:0.25rem;">
+        <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
+          No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
+        </div>
+      </div>
+      
+      <div class="stl" id="stl" style="display:flex;align-items:center;margin-top:1rem;"><span class="dot dy pu"></span><span id="stx">Initializing dashboard...</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
+    </div>`;
+
+  $('qrc').innerHTML = '';
+  new QRCode($('qrc'), {
+    text: url,
+    width: 130,
+    height: 130,
+    colorDark : "#000000",
+    colorLight : "#ffffff",
+    correctLevel : QRCode.CorrectLevel.M
+  });
+
+  runInboxReceiver(code);
+}
+
+function runInboxReceiver(code) {
+  startTimer();
+  logD('Connecting to signaling server as Inbox...');
+  inboxWs = new WebSocket(`${SIG}?code=${code}&role=inbox`);
+  
+  inboxWs.onopen = () => {
+    logD('Inbox dashboard is live.');
+    setSt('Dashboard live — waiting for senders…', 'dg');
+    $('inbox-status').className = 'bdg bok';
+    $('inbox-status').innerHTML = '<span class="dot dg pu"></span> Live Dashboard · 0 connected';
+  };
+  
+  inboxWs.onmessage = async ({ data }) => {
+    const m = JSON.parse(data);
+    const senderId = m.senderId;
+    
+    if (m.type === 'peer-joined') {
+      logD(`Sender joined: ${senderId}`);
+      setupInboxPeer(code, senderId);
+    }
+    else if (m.type === 'offer') {
+      logD(`Received offer from ${senderId}`);
+      let peer = inboxPeers.get(senderId);
+      if (!peer) {
+        peer = setupInboxPeer(code, senderId);
+      }
+      const pc = peer.pc;
+      await pc.setRemoteDescription(m.sdp).catch(()=>{});
+      const ans = await pc.createAnswer().catch(()=>null);
+      if (!ans) { logD(`Error creating answer for ${senderId}`); return; }
+      await pc.setLocalDescription(ans).catch(()=>{});
+      inboxWs.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription, targetSenderId: senderId }));
+    }
+    else if (m.type === 'ice') {
+      const peer = inboxPeers.get(senderId);
+      if (peer && peer.pc) {
+        if (peer.pc.remoteDescription) {
+          try { await peer.pc.addIceCandidate(m.candidate); } catch {}
+        } else {
+          peer.pIce.push(m.candidate);
+        }
+      }
+    }
+    else if (m.type === 'peer-left') {
+      logD(`Sender left: ${senderId}`);
+      cleanupInboxPeer(senderId);
+    }
+  };
+  
+  inboxWs.onclose = () => {
+    logD('Inbox signaling connection closed.');
+    setSt('Dashboard disconnected.', 'dr');
+    $('inbox-status').className = 'bdg bwn';
+    $('inbox-status').innerHTML = '<span class="dot dr"></span> Disconnected';
+    stopTimer();
+  };
+  
+  inboxWs.onerror = () => {
+    logD('Signaling server error.');
+    setSt('Error connecting to signal server.', 'dr');
+    stopTimer();
+  };
+}
+
+function setupInboxPeer(code, senderId) {
+  if (inboxPeers.has(senderId)) {
+    cleanupInboxPeer(senderId);
+  }
+  
+  const pc = new RTCPeerConnection(ICE);
+  const peer = {
+    pc,
+    dc: null,
+    chunks: [],
+    meta: null,
+    pIce: [],
+    elId: 'file-' + senderId + '-' + Date.now(),
+    accepted: false,
+    lT: 0, lR: 0, spd: 0
+  };
+  
+  inboxPeers.set(senderId, peer);
+  updateInboxConnectedCount();
+  
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate && inboxWs && inboxWs.readyState === 1) {
+      inboxWs.send(JSON.stringify({ type: 'ice', candidate, targetSenderId: senderId }));
+    }
+  };
+  
+  pc.ondatachannel = ({ channel }) => {
+    peer.dc = channel;
+    peer.dc.binaryType = 'arraybuffer';
+    logD(`P2P channel with ${senderId} opened.`);
+    
+    peer.pIce.forEach(async c => {
+      try { await pc.addIceCandidate(c); } catch {}
+    });
+    peer.pIce = [];
+    
+    channel.onmessage = e => {
+      const d = e.data;
+      if (typeof d === 'string') {
+        const msg = JSON.parse(d);
+        if (msg.type === 'meta') {
+          peer.meta = msg;
+          peer.chunks = [];
+          peer.lT = 0; peer.lR = 0; peer.spd = 0;
+          logD(`Incoming file from ${senderId}: "${msg.name}" (${fmtB(msg.size)})`);
+          
+          const ph = $('inbox-placeholder');
+          if (ph) ph.remove();
+          
+          renderInboxFileEntry(senderId, peer);
+          
+          if ($('auto-accept')?.checked) {
+            acceptInboxFile(senderId);
+          }
+        }
+        else if (msg.type === 'done') {
+          logD(`P2P download from ${senderId} complete.`);
+          updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
+          const blob = new Blob(peer.chunks, { type: peer.meta.mimeType || 'application/octet-stream' });
+          saveBlob(blob, peer.meta.name);
+          peer.chunks = [];
+        }
+      } else {
+        if (!peer.lT) peer.lT = Date.now();
+        peer.chunks.push(d);
+        const rcvd = peer.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+        const now = Date.now();
+        const dt = now - peer.lT;
+        if (dt >= 400) {
+          peer.spd = ((rcvd - peer.lR) / dt) * 1000;
+          peer.lR = rcvd;
+          peer.lT = now;
+        }
+        const eta = peer.spd > 0 && peer.meta ? Math.round((peer.meta.size - rcvd) / peer.spd) : 0;
+        updateInboxFileProgress(senderId, rcvd / peer.meta.size, 'Downloading', peer.spd, eta);
+      }
+    };
+    
+    channel.onclose = () => {
+      logD(`P2P channel with ${senderId} closed.`);
+      updateInboxFileProgress(senderId, null, 'Closed', 0, 0);
+    };
+  };
+  
+  return peer;
+}
+
+function updateInboxConnectedCount() {
+  const activeCount = Array.from(inboxPeers.values()).filter(p => p.pc.connectionState !== 'closed').length;
+  const el = $('inbox-status');
+  if (el) {
+    el.innerHTML = `<span class="dot dg pu"></span> Live Dashboard · ${activeCount} connected`;
+  }
+}
+
+function renderInboxFileEntry(senderId, peer) {
+  const fileContainer = $('inbox-files');
+  if (!fileContainer) return;
+  
+  let entry = $(peer.elId);
+  if (entry) entry.remove();
+  
+  entry = document.createElement('div');
+  entry.id = peer.elId;
+  entry.className = 'fade';
+  entry.style.cssText = 'background:var(--s); border:1px solid var(--b); border-radius:var(--r); padding:0.85rem; display:flex; flex-direction:column; gap:0.6rem;';
+  
+  const formattedName = peer.meta.name;
+  const formattedSize = fmtB(peer.meta.size);
+  const icon = mIco(peer.meta.mimeType);
+  const displaySender = senderId.slice(0, 8);
+  
+  entry.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+      <div style="display:flex; gap:0.65rem; min-width:0; flex:1;">
+        <span style="font-size:1.5rem; flex-shrink:0;">${icon}</span>
+        <div style="min-width:0; flex:1;">
+          <div class="fn" style="font-size:0.8rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${formattedName}">${formattedName}</div>
+          <div style="font-size:0.7rem; color:var(--m); margin-top:0.1rem;">
+            ${formattedSize} · From <span style="font-family:'IBM Plex Mono',monospace; color:var(--a);">${displaySender}</span>
+          </div>
+        </div>
+      </div>
+      <div id="badge-${peer.elId}" class="bdg bwn" style="font-size:0.65rem; padding:0.15rem 0.5rem; flex-shrink:0;">Waiting Accept</div>
+    </div>
+    
+    <div id="accept-row-${peer.elId}" style="display:flex; gap:0.5rem; margin-top:0.25rem;">
+      <button class="btn ba bsm" onclick="acceptInboxFile('${senderId}')" style="flex:1;">⬇️ Accept &amp; Download</button>
+      <button class="btn bg bsm" onclick="rejectInboxFile('${senderId}')" style="width:auto; padding:0 0.75rem;">✕</button>
+    </div>
+    
+    <div id="progress-row-${peer.elId}" style="display:none;">
+      <div class="pr" style="font-size:0.68rem; color:var(--m2); margin-bottom:0.3rem;">
+        <span id="label-${peer.elId}">Receiving...</span>
+        <span style="display:flex; gap:0.5rem;">
+          <span id="speed-${peer.elId}" style="color:var(--m)"></span>
+          <span id="eta-${peer.elId}" style="color:var(--m)"></span>
+          <strong id="percent-${peer.elId}" style="color:var(--t)">0%</strong>
+        </span>
+      </div>
+      <div class="pt" style="height:4px;"><div class="pf" id="bar-${peer.elId}" style="width:0%"></div></div>
+    </div>
+  `;
+  
+  fileContainer.insertBefore(entry, fileContainer.firstChild);
+}
+
+function acceptInboxFile(senderId) {
+  const peer = inboxPeers.get(senderId);
+  if (!peer || !peer.dc || peer.dc.readyState !== 'open') return;
+  
+  peer.accepted = true;
+  $(`accept-row-${peer.elId}`).style.display = 'none';
+  $(`progress-row-${peer.elId}`).style.display = 'block';
+  
+  const badge = $(`badge-${peer.elId}`);
+  if (badge) {
+    badge.className = 'bdg binf';
+    badge.textContent = 'Connecting';
+  }
+  
+  peer.dc.send(JSON.stringify({ type: 'accept' }));
+}
+
+function rejectInboxFile(senderId) {
+  const peer = inboxPeers.get(senderId);
+  if (!peer) return;
+  
+  const entry = $(peer.elId);
+  if (entry) entry.remove();
+  
+  if (peer.dc && peer.dc.readyState === 'open') {
+    peer.dc.send(JSON.stringify({ type: 'reject' }));
+    peer.dc.close();
+  }
+  cleanupInboxPeer(senderId);
+}
+
+function updateInboxFileProgress(senderId, ratio, status, speed, eta) {
+  const peer = inboxPeers.get(senderId);
+  if (!peer) return;
+  
+  const badge = $(`badge-${peer.elId}`);
+  if (badge) {
+    if (status === 'Downloading') {
+      badge.className = 'bdg binf';
+      badge.textContent = 'Downloading';
+      $(`accept-row-${peer.elId}`).style.display = 'none';
+      $(`progress-row-${peer.elId}`).style.display = 'block';
+    } else if (status === 'Completed') {
+      badge.className = 'bdg bok';
+      badge.textContent = 'Completed';
+      $(`progress-row-${peer.elId}`).style.display = 'block';
+      $(`label-${peer.elId}`).textContent = 'Saved';
+      $(`percent-${peer.elId}`).textContent = '100%';
+      $(`bar-${peer.elId}`).style.width = '100%';
+      $(`speed-${peer.elId}`).textContent = '';
+      $(`eta-${peer.elId}`).textContent = '';
+      setTimeout(() => {
+        const pr = $(`progress-row-${peer.elId}`);
+        if (pr) pr.style.display = 'none';
+      }, 3000);
+    } else if (status === 'Closed' || status === 'Disconnected') {
+      badge.className = 'bdg bwn';
+      badge.textContent = 'Disconnected';
+      $(`accept-row-${peer.elId}`).style.display = 'none';
+    }
+  }
+  
+  if (ratio !== null && status === 'Downloading') {
+    const pct = Math.round(ratio * 100);
+    const bar = $(`bar-${peer.elId}`);
+    const percent = $(`percent-${peer.elId}`);
+    const spdEl = $(`speed-${peer.elId}`);
+    const etaEl = $(`eta-${peer.elId}`);
+    
+    if (bar) bar.style.width = ratio * 100 + '%';
+    if (percent) percent.textContent = pct + '%';
+    if (spdEl) spdEl.textContent = speed ? fmtS(speed) : '';
+    if (etaEl) etaEl.textContent = eta ? fmtE(eta) : '';
+  }
+}
+
+function cleanupInboxPeer(senderId) {
+  const peer = inboxPeers.get(senderId);
+  if (!peer) return;
+  
+  if (peer.pc) {
+    peer.pc.close();
+  }
+  
+  const badge = $(`badge-${peer.elId}`);
+  if (badge) {
+    badge.className = 'bdg bwn';
+    badge.textContent = 'Disconnected';
+  }
+  
+  const acceptRow = $(`accept-row-${peer.elId}`);
+  if (acceptRow) acceptRow.style.display = 'none';
+  
+  inboxPeers.delete(senderId);
+  updateInboxConnectedCount();
+}
+
+function closeInbox() {
+  if (inboxWs) {
+    inboxWs.close();
+    inboxWs = null;
+  }
+  for (const [senderId] of inboxPeers) {
+    cleanupInboxPeer(senderId);
+  }
+  inboxPeers.clear();
+  showHome();
+}
+
+function startInboxSender(code) {
+  stopTimer();
+  root().innerHTML = `
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send to Inbox</span>
+        <button class="btn bg bsm" onclick="showHome()">← Back</button>
+      </div>
+      <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDropInbox(event, '${code}')">
+        <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+        <div class="dzt">Drop your file here</div>
+        <div class="dzs">to drop files into Inbox <span>${code}</span></div>
+        <input type="file" id="fi" style="display:none" onchange="onFPInbox(event, '${code}')">
+      </div>
+    </div>`;
+}
+
+function onDropInbox(e, code) {
+  e.preventDefault(); e.currentTarget.classList.remove('ov');
+  const f = e.dataTransfer.files?.[0]; if (f) startInboxSenderFlow(f, code);
+}
+function onFPInbox(e, code) {
+  const f = e.target.files?.[0]; if (f) startInboxSenderFlow(f, code);
+}
+
+function startInboxSenderFlow(file, code) {
+  if (activeInboxSender.code === code && activeInboxSender.connected && activeInboxSender.dc && activeInboxSender.dc.readyState === 'open') {
+    showInboxSenderProgressUI(file, code);
+    sendInboxFileDirectly(file);
+  } else {
+    cleanupActiveInboxSender();
+    const senderId = 's_' + genC();
+    activeInboxSender = { code, senderId, ws: null, pc: null, dc: null, connected: false };
+    showInboxSenderProgressUI(file, code);
+    connectInboxSender(file, code, senderId);
+  }
+}
+
+function showInboxSenderProgressUI(file, code) {
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1rem">
+        <span class="bdg binf"><span class="dot db pu"></span> Sending to Inbox</span>
+        <button class="btn bg bsm" onclick="cancelInboxSender('${code}')">Disconnect</button>
+      </div>
+      <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
+      
+      <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+    </div>`;
+  $('fic').textContent=mIco(file.type);
+}
+
+function connectInboxSender(file, code, senderId) {
+  let ws, pc, dc;
+  startTimer();
+  logD('Connecting to signaling server...');
+  ws = new WebSocket(`${SIG}?code=${code}&role=sender&senderId=${senderId}&isInbox=true`);
+  activeInboxSender.ws = ws;
+  
+  ws.onopen = () => {
+    logD('Connected to signaling server.');
+    logD('Waiting for inbox receiver to respond...');
+    setSt('Waiting for inbox receiver...', 'dy');
+    
+    pc = new RTCPeerConnection(ICE);
+    activeInboxSender.pc = pc;
+    
+    dc = pc.createDataChannel('file', { ordered: true });
+    dc.binaryType = 'arraybuffer';
+    activeInboxSender.dc = dc;
+    
+    let timer = setTimeout(() => {
+      if (!activeInboxSender.connected) {
+        setSt('P2P connection timed out.', 'dr');
+        logD('Error: Connection timed out.');
+        stopTimer();
+      }
+    }, P2P_TO);
+    
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'ice', candidate, targetSenderId: senderId }));
+      }
+    };
+    
+    pc.onconnectionstatechange = () => {
+      logD('Connection state: ' + pc.connectionState);
+      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+        activeInboxSender.connected = false;
+        setSt('Connection lost.', 'dr');
+        stopTimer();
+      }
+    };
+    
+    dc.onopen = () => {
+      clearTimeout(timer);
+      activeInboxSender.connected = true;
+      logD('P2P channel opened! Sending metadata...');
+      setSt('Connected! Sending metadata...', 'dg');
+      sendInboxFileDirectly(file);
+    };
+    
+    dc.onmessage = e => {
+      if (typeof e.data !== 'string') return;
+      const m = JSON.parse(e.data);
+      if (m.type === 'accept') {
+        logD('Inbox receiver accepted file. Starting direct P2P stream...');
+        setSt('Transferring via P2P…', 'dg');
+        $('pw').style.display = 'block';
+        sendChunks(dc, file, () => {
+          logD('File transfer complete.');
+          stopTimer();
+          showInboxSendDone(file, code);
+        });
+      } else if (m.type === 'reject') {
+        logD('Inbox receiver rejected file.');
+        setSt('File rejected by receiver.', 'dr');
+        stopTimer();
+      }
+    };
+    
+    dc.onclose = () => {
+      logD('Data channel closed.');
+      activeInboxSender.connected = false;
+      setSt('Channel closed.', 'dr');
+      stopTimer();
+    };
+    
+    logD('Creating connection offer...');
+    pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
+      ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription, senderId }));
+    }).catch(err => {
+      setSt('Offer Error: ' + err.message, 'dr');
+      logD('Offer Error: ' + err.message);
+      stopTimer();
+    });
+  };
+  
+  let pIce = [];
+  ws.onmessage = async ({ data }) => {
+    const m = JSON.parse(data);
+    if (m.type === 'answer') {
+      logD('Inbox receiver answered handshake.');
+      setSt('Inbox receiver found — forming P2P…', 'dy');
+      await pc.setRemoteDescription(m.sdp).catch(() => {});
+      for (const c of pIce) { try { await pc.addIceCandidate(c); } catch {} }
+      pIce = [];
+    } else if (m.type === 'ice') {
+      if (pc?.remoteDescription) {
+        try { await pc.addIceCandidate(m.candidate); } catch {}
+      } else {
+        pIce.push(m.candidate);
+      }
+    } else if (m.type === 'peer-left') {
+      logD('Inbox receiver disconnected.');
+      setSt('Inbox receiver disconnected.', 'dr');
+      stopTimer();
+    }
+  };
+  
+  ws.onerror = () => {
+    logD('Error connecting to signal server.');
+    setSt('Cannot connect to signaling server.', 'dr');
+    stopTimer();
+  };
+}
+
+function sendInboxFileDirectly(file) {
+  const dc = activeInboxSender.dc;
+  if (!dc || dc.readyState !== 'open') return;
+  
+  dc.send(JSON.stringify({
+    type: 'meta',
+    name: file.name,
+    size: file.size,
+    mimeType: file.type || 'application/octet-stream'
+  }));
+  
+  dc.onmessage = e => {
+    if (typeof e.data !== 'string') return;
+    const m = JSON.parse(e.data);
+    if (m.type === 'accept') {
+      logD('Inbox receiver accepted file. Starting direct P2P stream...');
+      setSt('Transferring via P2P…', 'dg');
+      $('pw').style.display = 'block';
+      sendChunks(dc, file, () => {
+        logD('File transfer complete.');
+        stopTimer();
+        showInboxSendDone(file, activeInboxSender.code);
+      });
+    } else if (m.type === 'reject') {
+      logD('Inbox receiver rejected file.');
+      setSt('File rejected by receiver.', 'dr');
+      stopTimer();
+    }
+  };
+}
+
+function showInboxSendDone(file, code) {
+  root().innerHTML = `
+    <div class="card fade" style="text-align:center">
+      <div class="dic">✅</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">File sent!</div>
+      <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${file.name}</strong> (${fmtB(file.size)}) sent to Inbox <strong>${code}</strong></p>
+      
+      <div class="div"></div>
+      
+      <div style="font-family:Syne,sans-serif;font-size:0.9rem;font-weight:700;margin-bottom:0.75rem;text-align:left;">Send another file to this Inbox:</div>
+      <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDropInbox(event, '${code}')">
+        <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+        <div class="dzt">Drop another file here</div>
+        <div class="dzs">to send instantly without reconnecting</div>
+        <input type="file" id="fi" style="display:none" onchange="onFPInbox(event, '${code}')">
+      </div>
+      
+      <button class="btn bg mt1" onclick="cancelInboxSender('${code}')">← Disconnect</button>
+    </div>`;
+}
+
+function cleanupActiveInboxSender() {
+  if (activeInboxSender.ws) activeInboxSender.ws.close();
+  if (activeInboxSender.pc) activeInboxSender.pc.close();
+  activeInboxSender = { code: null, senderId: null, ws: null, pc: null, dc: null, connected: false };
+}
+
+function cancelInboxSender(code) {
+  cleanupActiveInboxSender();
+  showHome();
+}
+
+function showSendDonePersistent1to1(file, code, dc, pc, ws) {
+  active1to1Sender = { code, dc, pc, ws };
+  
+  root().innerHTML = `
+    <div class="card fade" style="text-align:center">
+      <div class="dic">✅</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">File sent!</div>
+      <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${file.name}</strong> (${fmtB(file.size)}) sent successfully</p>
+      
+      <div style="margin-bottom:1.25rem"><span class="mtg mp">⚡ Direct P2P — connected</span></div>
+      
+      <div class="div"></div>
+      
+      <div style="font-family:Syne,sans-serif;font-size:0.9rem;font-weight:700;margin-bottom:0.75rem;text-align:left;">Send another file to this receiver:</div>
+      <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDrop1to1Persistent(event)">
+        <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+        <div class="dzt">Drop another file here</div>
+        <div class="dzs">to send instantly over the same connection</div>
+        <input type="file" id="fi" style="display:none" onchange="onFP1to1Persistent(event)">
+      </div>
+      
+      <button class="btn bg mt1" onclick="disconnect1to1Sender()">← Disconnect</button>
+    </div>`;
+}
+
+function onDrop1to1Persistent(e) {
+  e.preventDefault(); e.currentTarget.classList.remove('ov');
+  const f = e.dataTransfer.files?.[0]; if (f) send1to1PersistentFile(f);
+}
+function onFP1to1Persistent(e) {
+  const f = e.target.files?.[0]; if (f) send1to1PersistentFile(f);
+}
+
+function send1to1PersistentFile(file) {
+  const { code, dc, pc, ws } = active1to1Sender;
+  if (!dc || dc.readyState !== 'open') {
+    startSend(file);
+    return;
+  }
+  
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1rem">
+        <span class="bdg binf"><span class="dot db pu"></span> Sending another file</span>
+        <button class="btn bg bsm" onclick="disconnect1to1Sender()">Disconnect</button>
+      </div>
+      <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
+      <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Offering file to receiver…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+    </div>`;
+  $('fic').textContent=mIco(file.type);
+  
+  startTimer();
+  logD('Sending metadata for new file...');
+  dc.send(JSON.stringify({ type: 'meta', name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream' }));
+  setSt('Receiver reviewing — waiting for accept…', 'db');
+  
+  dc.onmessage = e => {
+    if (typeof e.data !== 'string') return;
+    const m = JSON.parse(e.data);
+    if (m.type === 'accept') {
+      logD('Receiver accepted file. Starting direct P2P stream...');
+      setSt('Transferring via P2P…', 'dg');
+      $('pw').style.display = 'block';
+      sendChunks(dc, file, () => {
+        logD('File transfer complete.');
+        stopTimer();
+        showSendDonePersistent1to1(file, code, dc, pc, ws);
+      });
+    }
+  };
+}
+
+function disconnect1to1Sender() {
+  if (active1to1Sender.ws) active1to1Sender.ws.close();
+  if (active1to1Sender.pc) active1to1Sender.pc.close();
+  active1to1Sender = { code: null, dc: null, pc: null, ws: null };
+  showHome();
+}
+
+function showRecvDonePersistent1to1(lastMeta, code, dc, pc, ws) {
+  active1to1Receiver = { code, dc, pc, ws, chunks: [] };
+  
+  root().innerHTML = `
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom: 1rem">
+        <span class="bdg bok"><span class="dot dg pu"></span> Connected to Sender</span>
+        <button class="btn bg bsm" onclick="disconnect1to1Receiver()">Disconnect</button>
+      </div>
+      
+      <div class="dic" style="margin-bottom:0.4rem">⬇️</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;text-align:center;">Download complete</div>
+      <p style="font-size:.8rem;color:var(--m);margin-bottom:1rem;text-align:center;"><strong>${lastMeta.name}</strong> (${fmtB(lastMeta.size)}) saved</p>
+      
+      <div class="div"></div>
+      
+      <div id="recv-waiting-msg" style="text-align:center; padding:1.5rem 1rem; color:var(--m); font-size:0.8rem; border:1px dashed var(--b); border-radius:var(--r);">
+        <span class="dot dg pu" style="display:inline-block; vertical-align:middle; margin-right:0.35rem; width:6px; height:6px;"></span>
+        Waiting for sender to send another file...
+      </div>
+      
+      <div id="finfo" style="display:none">
+        <div class="fr"><span class="fic" id="rico">📁</span><div><div class="fn" id="rname">—</div><div class="fm" id="rmeta">—</div></div></div>
+        <button class="btn ba" id="abtn" onclick="doAccept1to1Persistent()">⬇️ Accept &amp; Download</button>
+      </div>
+      
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Receiving…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+      
+      <div class="stl" id="stl" style="display:flex;align-items:center;margin-top:1rem;"><span class="dot dg pu"></span><span id="stx">Ready for next transfer</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
+    </div>`;
+  
+  setup1to1ReceiverDC(dc, lastMeta);
+}
+
+function setup1to1ReceiverDC(dc, lastMeta) {
+  let meta = null;
+  let rcvd = 0;
+  let spd = 0, lR = 0, lT = 0;
+  
+  dc.onmessage = e => {
+    const d = e.data;
+    if (typeof d === 'string') {
+      const msg = JSON.parse(d);
+      if (msg.type === 'meta') {
+        meta = msg;
+        active1to1Receiver.chunks = [];
+        rcvd = 0; spd = 0; lR = 0; lT = 0;
+        
+        logD(`Received new metadata: "${msg.name}" (${fmtB(msg.size)})`);
+        
+        const waitingMsg = $('recv-waiting-msg');
+        if (waitingMsg) waitingMsg.style.display = 'none';
+        
+        $('rico').textContent = mIco(msg.mimeType);
+        $('rname').textContent = msg.name;
+        $('rmeta').textContent = fmtB(msg.size) + (msg.mimeType ? ' · ' + msg.mimeType : '');
+        $('finfo').style.display = 'block';
+        $('abtn').style.display = 'block';
+        $('pw').style.display = 'none';
+        
+        setSt('New file ready — click Accept', 'dg');
+      }
+      else if (msg.type === 'done' && meta) {
+        logD('P2P download complete. Saving file...');
+        setProg(1, 'Saving…');
+        const blob = new Blob(active1to1Receiver.chunks, { type: meta.mimeType || 'application/octet-stream' });
+        saveBlob(blob, meta.name);
+        
+        showRecvDonePersistent1to1(meta, active1to1Receiver.code, active1to1Receiver.dc, active1to1Receiver.pc, active1to1Receiver.ws);
+      }
+    } else {
+      if (!lT) { lT = Date.now(); logD('Receiving file data stream...'); }
+      active1to1Receiver.chunks.push(d);
+      rcvd += d.byteLength;
+      const now = Date.now();
+      const dt = now - lT;
+      if (dt >= 400) {
+        spd = ((rcvd - lR) / dt) * 1000;
+        lR = rcvd;
+        lT = now;
+      }
+      const eta = spd > 0 && meta?.size ? Math.round((meta.size - rcvd) / spd) : 0;
+      if (meta?.size) setProg(rcvd / meta.size, 'Receiving…', spd, eta);
+    }
+  };
+  
+  dc.onclose = () => {
+    logD('Data channel closed.');
+    setSt('Sender disconnected.', 'dr');
+    stopTimer();
+  };
+}
+
+function doAccept1to1Persistent() {
+  const dc = active1to1Receiver.dc;
+  if (!dc || dc.readyState !== 'open') return;
+  
+  logD('Accepting download. Starting stream request...');
+  $('abtn').style.display = 'none';
+  $('pw').style.display = 'block';
+  
+  dc.send(JSON.stringify({ type: 'accept' }));
+  setSt('Receiving…', 'dg');
+}
+
+function disconnect1to1Receiver() {
+  if (active1to1Receiver.ws) active1to1Receiver.ws.close();
+  if (active1to1Receiver.pc) active1to1Receiver.pc.close();
+  active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
+  showHome();
 }
 
 showHome();
