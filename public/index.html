@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="Send files of any size, directly between devices. No login. No storage.">
+<title>FileShare</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2322d3ee'/><path d='M16 6v16M10 14l6-8 6 8M8 26h16' stroke='%230a0a14' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="/qr-generator.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07070e;--bg2:#0d0d1a;
+  --s:rgba(255,255,255,.04);--sh:rgba(255,255,255,.07);
+  --b:rgba(255,255,255,.09);--bh:rgba(34,211,238,.4);
+  --a:#22d3ee;--ad:rgba(34,211,238,.1);--ag:rgba(34,211,238,.2);
+  --t:#f0f4ff;--m:#718096;--m2:#4a5568;
+  --ok:#34d399;--okd:rgba(52,211,153,.08);
+  --wn:#fbbf24;--wnd:rgba(251,191,36,.08);
+  --er:#f87171;--erd:rgba(248,113,113,.08);
+  --r:10px;--rl:16px
+}
+body{background:var(--bg);color:var(--t);font-family:'DM Sans',system-ui,sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(rgba(34,211,238,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.025) 1px,transparent 1px);background-size:38px 38px}
+.wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1rem}
+.box{width:100%;max-width:500px}
+.card{background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:2rem;backdrop-filter:blur(12px)}
+.fade{animation:fu .3s ease}
+@keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.hdr{text-align:center;margin-bottom:2rem}
+.logo{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;margin-bottom:.35rem}
+.li{width:32px;height:32px;background:var(--a);border-radius:8px;display:flex;align-items:center;justify-content:center}
+.li svg{width:17px;height:17px}
+.ln{font-family:'Syne',sans-serif;font-size:1.25rem;font-weight:800;letter-spacing:-.02em;color:var(--t)}
+.tg{font-size:.74rem;color:var(--m);letter-spacing:.05em;text-transform:uppercase}
+.mg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem}
+.mb{background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:1.75rem 1rem;cursor:pointer;text-align:center;transition:all .2s;color:var(--t)}
+.mb:hover{border-color:var(--bh);background:var(--ad);transform:translateY(-2px)}
+.mb .ic{font-size:2rem;margin-bottom:.5rem}
+.mb .lb{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700}
+.mb .sb{font-size:.72rem;color:var(--m);margin-top:.2rem}
+.pills{display:flex;justify-content:center;gap:.5rem;flex-wrap:wrap;margin-top:1.5rem}
+.pill{background:var(--bg2);border:1px solid var(--b);border-radius:99px;padding:.28rem .75rem;font-size:.7rem;color:var(--m2)}
+.dz{border:2px dashed var(--b);border-radius:var(--r);padding:2.75rem 1.5rem;text-align:center;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.dz::after{content:'';position:absolute;inset:0;background:var(--ad);opacity:0;transition:opacity .15s;pointer-events:none}
+.dz:hover,.dz.ov{border-color:var(--a);border-style:solid}
+.dz:hover::after,.dz.ov::after{opacity:1}
+.dzi{width:44px;height:44px;margin:0 auto .8rem;color:var(--a);position:relative;z-index:1}
+.dzt{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;position:relative;z-index:1;margin-bottom:.25rem}
+.dzs{font-size:.78rem;color:var(--m2);position:relative;z-index:1}
+.dzs span{color:var(--a)}
+.btn{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.875rem 1.5rem;border:none;border-radius:var(--r);font-family:'DM Sans',sans-serif;font-size:.9rem;font-weight:500;cursor:pointer;transition:all .18s}
+.ba{background:var(--a);color:var(--bg);font-weight:600}
+.ba:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 4px 18px var(--ag)}
+.ba:disabled{opacity:.4;cursor:not-allowed}
+.bg{background:var(--s);color:var(--t);border:1px solid var(--b)}
+.bg:hover{background:var(--sh);border-color:var(--bh)}
+.bsm{padding:.38rem .8rem;font-size:.74rem;width:auto}
+.mt1{margin-top:.75rem}
+.cb{background:var(--bg2);border:1px solid var(--b);border-radius:var(--r);padding:.9rem 1.1rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:.85rem 0}
+.cl{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--m2);margin-bottom:.2rem}
+.cv{font-family:'IBM Plex Mono',monospace;font-size:1.75rem;font-weight:500;letter-spacing:.22em}
+.qrw{background:#fff;border-radius:var(--r);padding:9px;display:inline-block;flex-shrink:0}
+.qrw canvas{display:block;width:130px;height:130px}
+.pw{margin:.85rem 0}
+.pr{display:flex;justify-content:space-between;font-size:.73rem;color:var(--m2);margin-bottom:.4rem}
+.pt{height:5px;background:var(--b);border-radius:99px;overflow:hidden}
+.pf{height:100%;background:linear-gradient(90deg,var(--a),#818cf8);border-radius:99px;transition:width .1s ease}
+.stl{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:var(--m2);padding:.55rem .85rem;background:var(--bg2);border:1px solid var(--b);border-radius:8px;margin:.75rem 0}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dy{background:var(--wn)}.dg{background:var(--ok)}.db{background:var(--a)}.dr{background:var(--er)}
+.pu{animation:pu 1.8s ease infinite}
+@keyframes pu{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.75)}}
+.ci{background:var(--bg2);border:1.5px solid var(--b);border-radius:var(--r);color:var(--t);font-family:'IBM Plex Mono',monospace;font-size:1.9rem;font-weight:500;letter-spacing:.2em;text-align:center;padding:.7rem;width:100%;text-transform:uppercase;transition:border-color .15s;outline:none;margin:.85rem 0}
+.ci:focus{border-color:var(--a)}
+.ci::placeholder{opacity:.2}
+.fr{background:var(--bg2);border:1px solid var(--b);border-radius:var(--r);padding:.85rem .95rem;display:flex;align-items:center;gap:.85rem;margin:.85rem 0}
+.fic{font-size:1.5rem;flex-shrink:0}
+.fn{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--a);word-break:break-all;font-weight:500}
+.fm{font-size:.7rem;color:var(--m);margin-top:.12rem}
+.bdg{display:inline-flex;align-items:center;gap:.38rem;padding:.25rem .72rem;border-radius:99px;font-size:.7rem;font-weight:500}
+.bok{background:var(--okd);border:1px solid rgba(52,211,153,.2);color:var(--ok)}
+.binf{background:var(--ad);border:1px solid rgba(34,211,238,.2);color:var(--a)}
+.bwn{background:var(--wnd);border:1px solid rgba(251,191,36,.2);color:var(--wn)}
+.mtg{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .7rem;border-radius:99px;font-size:.7rem}
+.mp{background:var(--okd);border:1px solid rgba(52,211,153,.2);color:var(--ok)}
+.mr{background:var(--ad);border:1px solid rgba(34,211,238,.2);color:var(--a)}
+.div{height:1px;background:var(--b);margin:1rem 0}
+.rsb{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.slb{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--m2);margin-bottom:.45rem}
+.lr{background:var(--bg2);border:1px solid var(--b);border-radius:8px;padding:.65rem .85rem;display:flex;align-items:center;gap:.5rem}
+.lu{flex:1;font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dic{font-size:2.8rem;text-align:center;margin-bottom:.6rem}
+footer{text-align:center;font-size:.73rem;color:var(--m2);margin-top:2rem;padding-bottom:1.5rem}
+footer a{color:var(--m);text-decoration:none}
+footer a:hover{color:var(--a)}
+@media(max-width:460px){.card{padding:1.5rem 1.1rem}.cv{font-size:1.35rem;letter-spacing:.15em}.qr-row{flex-direction:column;align-items:center}.qrw canvas{width:150px;height:150px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="box">
+    <header class="hdr">
+      <a href="/" class="logo">
+        <span class="li"><svg viewBox="0 0 17 17" fill="none"><path d="M8.5 1.5v11M3.5 7l5-5.5 5 5.5" stroke="#07070e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 15.5h14" stroke="#07070e" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span class="ln">FileShare</span>
+      </a>
+      <p class="tg">P2P · any size · always free</p>
+    </header>
+    <div id="root"></div>
+    <footer>Files travel directly between browsers — never stored on a server.<br><a href="https://github.com/your-username/fileshare" target="_blank" rel="noopener">View source →</a></footer>
+  </div>
+</div>
+<script>
+const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
+  : 'wss://CHANGE_ME.onrender.com/ws';
+
+const ICE = { iceServers:[
+  {urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302']},
+  {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
+]};
+
+const CHUNK   = 256*1024;
+const MAXBUF  = 8*1024*1024;
+const P2P_TO  = 15000;
+const CHARS   = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+const $    = id => document.getElementById(id);
+const root = () => $('root');
+const fmtB = b => { if(!b)return'—'; if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; if(b<1073741824)return(b/1048576).toFixed(1)+' MB'; return(b/1073741824).toFixed(2)+' GB'; };
+const fmtS = s => { if(s<1024)return s.toFixed(0)+' B/s'; if(s<1048576)return(s/1024).toFixed(0)+' KB/s'; return(s/1048576).toFixed(1)+' MB/s'; };
+const fmtE = s => s<60?s+'s left':s<3600?Math.round(s/60)+'m left':(s/3600).toFixed(1)+'h left';
+const genC  = () => Array.from({length:6},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join('');
+const mIco  = t => { if(!t)return'📁'; if(t.startsWith('image'))return'🖼️'; if(t.startsWith('video'))return'🎬'; if(t.startsWith('audio'))return'🎵'; if(t.includes('pdf'))return'📄'; if(t.includes('zip')||t.includes('tar')||t.includes('rar')||t.includes('7z'))return'📦'; if(t.startsWith('text'))return'📝'; return'📁'; };
+function cpText(txt,btn){ navigator.clipboard.writeText(txt).then(()=>{ const o=btn.textContent; btn.textContent='✓'; btn.style.color='var(--ok)'; setTimeout(()=>{btn.textContent=o;btn.style.color='';},2000); }).catch(()=>{}); }
+function setSt(txt,cls='dy'){ const sl=$('stl'),tx=$('stx'); if(!sl||!tx)return; sl.querySelector('.dot').className='dot '+cls+' pu'; tx.textContent=txt; }
+function setProg(r,lbl,spd,eta){ const pw=$('pw'); if(!pw)return; pw.style.display='block'; $('pf').style.width=(Math.min(r,1)*100).toFixed(1)+'%'; $('pct').textContent=Math.round(r*100)+'%'; if($('pl')&&lbl)$('pl').textContent=lbl; if($('spd')&&spd!==undefined)$('spd').textContent=spd?fmtS(spd):''; if($('eta')&&eta!==undefined)$('eta').textContent=eta?fmtE(eta):''; }
+function saveBlob(blob,name){ const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:name}); document.body.appendChild(a);a.click();document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),60000); }
+
+function showHome(){
+  const p=new URLSearchParams(location.search);
+  const qc=p.get('code')?.toUpperCase().slice(0,6);
+  const ri=p.get('relay');
+  if(ri) return startRelayRecv(ri);
+  if(qc&&/^[A-Z0-9]{6}$/.test(qc)) return startRecv(qc);
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="mg">
+        <button class="mb" onclick="showSend()"><div class="ic">⬆️</div><div class="lb">Send</div><div class="sb">Pick a file</div></button>
+        <button class="mb" onclick="showRecv()"><div class="ic">⬇️</div><div class="lb">Receive</div><div class="sb">Enter a code</div></button>
+      </div>
+    </div>
+    <div class="pills"><span class="pill">🔒 End-to-end P2P</span><span class="pill">⚡ Any file size</span><span class="pill">🗑️ Never stored</span><span class="pill">💸 Free forever</span></div>`;
+}
+
+function showSend(){
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send a file</span>
+        <button class="btn bg bsm" onclick="showHome()">← Back</button>
+      </div>
+      <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDrop(event)">
+        <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+        <div class="dzt">Drop your file here</div>
+        <div class="dzs">or <span>click to browse</span> — any size, any type</div>
+        <input type="file" id="fi" style="display:none" onchange="onFP(event)">
+      </div>
+    </div>`;
+}
+
+function onDrop(e){ e.preventDefault(); e.currentTarget.classList.remove('ov'); const f=e.dataTransfer.files?.[0]; if(f)startSend(f); }
+function onFP(e){ const f=e.target.files?.[0]; if(f)startSend(f); }
+
+function startSend(file){
+  const code=genC();
+  const url=`${location.origin}${location.pathname}?code=${code}`;
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1rem">
+        <span class="bdg binf"><span class="dot db pu"></span> Waiting for receiver</span>
+        <button class="btn bg bsm" onclick="showSend()">Cancel</button>
+      </div>
+      <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
+      <div style="display:flex;gap:1rem;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div class="cb"><div><div class="cl">Share this code</div><div class="cv">${code}</div></div><button class="btn bg bsm" onclick="cpText('${code}',this)">Copy</button></div>
+          <div class="slb">Or share this link</div>
+          <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
+        </div>
+        <div style="text-align:center;flex-shrink:0"><div class="qrw"><canvas id="qrc"></canvas></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to receive</div></div>
+      </div>
+      <div class="stl" id="stl"><span class="dot dy pu"></span><span id="stx">Connecting…</span></div>
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+    </div>`;
+  $('fic').textContent=mIco(file.type);
+  QRCode.toCanvas($('qrc'),url,{width:130,margin:1,color:{dark:'#07070e',light:'#22d3ee'}});
+  runSender(file,code);
+}
+
+function runSender(file,code){
+  let pc=null,dc=null,ws=null,done=false,timer=null;
+  ws=new WebSocket(`${SIG}?code=${code}&role=sender`);
+  ws.onopen=()=>{
+    setSt('Waiting — share the code or QR with the receiver','dy');
+    pc=new RTCPeerConnection(ICE);
+    dc=pc.createDataChannel('file',{ordered:true});
+    dc.binaryType='arraybuffer';
+    timer=setTimeout(()=>{ if(!done){ setSt('P2P connection timed out. Please check network compatibility (WiFi/Mobile Data).','dr'); } },P2P_TO);
+    pc.onicecandidate=({candidate})=>{ if(candidate&&ws.readyState===1) ws.send(JSON.stringify({type:'ice',candidate})); };
+    pc.onconnectionstatechange=()=>{ if(['disconnected','failed','closed'].includes(pc.connectionState)&&!done) setSt('Connection lost.','dr'); };
+    dc.onopen=()=>{ clearTimeout(timer); dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream'})); setSt('Receiver reviewing — waiting for accept…','db'); };
+    dc.onmessage=e=>{ if(typeof e.data!=='string')return; const m=JSON.parse(e.data); if(m.type==='accept'){ setSt('Transferring via P2P…','dg'); sendChunks(dc,file,()=>{ done=true; ws.close(); showSendDone(file,'p2p'); }); }};
+    dc.onclose=()=>{ if(!done)setSt('Channel closed.','dr'); };
+    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>ws.send(JSON.stringify({type:'offer',sdp:pc.localDescription}))).catch(e=>setSt('Error: '+e.message,'dr'));
+  };
+  let pIce=[];
+  ws.onmessage=async({data})=>{
+    const m=JSON.parse(data);
+    if(m.type==='answer'){ setSt('Receiver found — forming P2P…','dy'); await pc.setRemoteDescription(m.sdp).catch(()=>{}); for(const c of pIce){try{await pc.addIceCandidate(c);}catch{}} pIce=[]; }
+    else if(m.type==='ice'){ if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate); }
+    else if(m.type==='peer-left'&&!done) setSt('Receiver disconnected.','dr');
+  };
+  ws.onerror=()=>setSt('Cannot connect to signal server.','dr');
+}
+
+function sendChunks(dc,file,onDone){
+  let off=0,lastT=Date.now(),lastB=0,spd=0;
+  const tick=()=>{
+    if(off>=file.size){ dc.send(JSON.stringify({type:'done'})); onDone(); return; }
+    if(dc.bufferedAmount>MAXBUF){ dc.bufferedAmountLowThreshold=MAXBUF/2; dc.onbufferedamountlow=()=>{ dc.onbufferedamountlow=null; tick(); }; return; }
+    file.slice(off,off+CHUNK).arrayBuffer().then(buf=>{
+      dc.send(buf); off+=buf.byteLength;
+      const now=Date.now(),dt=now-lastT;
+      if(dt>=400){ spd=((off-lastB)/dt)*1000; lastB=off; lastT=now; }
+      const eta=spd>0?Math.round((file.size-off)/spd):0;
+      setProg(off/file.size,'Sending…',spd,eta); tick();
+    });
+  };
+  tick();
+}
+
+function uploadRelay(file,_code){
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST','/api/relay/upload');
+  xhr.setRequestHeader('X-File-Name',encodeURIComponent(file.name));
+  xhr.setRequestHeader('X-File-Type',file.type||'application/octet-stream');
+  xhr.setRequestHeader('X-File-Size',String(file.size));
+  xhr.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+  let lL=0,lT=Date.now();
+  xhr.upload.onprogress=e=>{ if(e.lengthComputable){ const now=Date.now(),dt=now-lT; let s=0,eta=0; if(dt>300){s=((e.loaded-lL)/dt)*1000;lL=e.loaded;lT=now;} if(s>0)eta=Math.round((e.total-e.loaded)/s); setProg(e.loaded/e.total,'Uploading to relay…',s,eta); }};
+  xhr.onload=()=>{ if(xhr.status===201){ const{id}=JSON.parse(xhr.responseText); showSendDone(file,'relay',id); } else setSt('Relay upload failed.','dr'); };
+  xhr.onerror=()=>setSt('Network error.','dr');
+  xhr.send(file);
+}
+
+function showSendDone(file,mode,relayId){
+  const ru=relayId?`${location.origin}${location.pathname}?relay=${relayId}`:'';
+  root().innerHTML=`
+    <div class="card fade" style="text-align:center">
+      <div class="dic">✅</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">File sent!</div>
+      <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${file.name}</strong> (${fmtB(file.size)})</p>
+      <div style="margin-bottom:1.25rem"><span class="mtg ${mode==='p2p'?'mp':'mr'}">${mode==='p2p'?'⚡ Direct P2P — never touched a server':'☁️ Via relay — deleted after download'}</span></div>
+      ${relayId?`<div style="text-align:left;margin-bottom:1rem"><div class="slb">Relay link (expires 10 min)</div><div class="lr"><span class="lu">${ru}</span><button class="btn bg bsm" onclick="cpText('${ru}',this)">Copy</button></div></div>`:''}
+      <button class="btn ba" onclick="showSend()">Send another</button>
+      <button class="btn bg mt1" onclick="showHome()">← Home</button>
+    </div>`;
+}
+
+function showRecv(){
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive a file</span><button class="btn bg bsm" onclick="showHome()">← Back</button></div>
+      <div class="slb">Enter the 6-character code from the sender</div>
+      <input class="ci" id="ci" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryJoin()">
+      <button class="btn ba" onclick="tryJoin()">Connect →</button>
+    </div>`;
+  setTimeout(()=>$('ci')?.focus(),50);
+}
+
+function tryJoin(){ const c=($('ci')?.value||'').trim().toUpperCase(); if(c.length!==6){ const el=$('ci'); if(!el)return; el.style.borderColor='var(--er)'; setTimeout(()=>el.style.borderColor='',1400); return; } startRecv(c); }
+
+function startRecv(code){
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Connecting…</span><button class="btn bg bsm" onclick="showHome()">Cancel</button></div>
+      <div class="cb" style="margin-bottom:.85rem"><div><div class="cl">Room code</div><div class="cv">${code}</div></div></div>
+      <div class="stl" id="stl"><span class="dot dy pu"></span><span id="stx">Connecting to signal server…</span></div>
+      <div id="finfo" style="display:none">
+        <div class="div"></div>
+        <div class="fr"><span class="fic" id="rico">📁</span><div><div class="fn" id="rname">—</div><div class="fm" id="rmeta">—</div></div></div>
+        <button class="btn ba" id="abtn" onclick="doAccept()">⬇️ Accept &amp; Download</button>
+      </div>
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Receiving…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+    </div>`;
+  runReceiver(code);
+}
+
+function runReceiver(code){
+  let pc=null,ws=null,dc=null,meta=null;
+  const chunks=[];let rcvd=0,spd=0,lR=0,lT=0;
+  let pIce=[],accepted=false;
+  ws=new WebSocket(`${SIG}?code=${code}&role=receiver`);
+  ws.onopen=()=>setSt('Connected — waiting for sender…','dy');
+  ws.onmessage=async({data})=>{
+    const m=JSON.parse(data);
+    if(m.type==='offer'){
+      setSt('Sender found — forming P2P…','dy');
+      pc=new RTCPeerConnection(ICE);
+      pc.onicecandidate=({candidate})=>{ if(candidate&&ws.readyState===1) ws.send(JSON.stringify({type:'ice',candidate})); };
+      pc.ondatachannel=({channel})=>{
+        dc=channel; dc.binaryType='arraybuffer';
+        setSt('P2P connected!','dg');
+        dc.onmessage=e=>{
+          const d=e.data;
+          if(typeof d==='string'){
+            const msg=JSON.parse(d);
+            if(msg.type==='meta'){ meta=msg; $('rico').textContent=mIco(msg.mimeType); $('rname').textContent=msg.name; $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:''); $('finfo').style.display='block'; setSt('File ready — click Accept','dg'); }
+            if(msg.type==='done'&&meta){ setProg(1,'Saving…'); const blob=new Blob(chunks,{type:meta.mimeType||'application/octet-stream'}); saveBlob(blob,meta.name); ws.close(); showRecvDone(meta,'p2p'); }
+          } else { if(!lT)lT=Date.now(); chunks.push(d); rcvd+=d.byteLength; const now=Date.now(),dt=now-lT; if(dt>=400){spd=((rcvd-lR)/dt)*1000;lR=rcvd;lT=now;} const eta=spd>0&&meta?.size?Math.round((meta.size-rcvd)/spd):0; if(meta?.size)setProg(rcvd/meta.size,'Receiving…',spd,eta); }
+        };
+        dc.onclose=()=>setSt('Channel closed.','dr');
+      };
+      await pc.setRemoteDescription(m.sdp).catch(()=>{});
+      const ans=await pc.createAnswer().catch(()=>null); if(!ans)return;
+      await pc.setLocalDescription(ans).catch(()=>{});
+      ws.send(JSON.stringify({type:'answer',sdp:pc.localDescription}));
+      for(const c of pIce){try{await pc.addIceCandidate(c);}catch{}} pIce=[];
+    } else if(m.type==='ice'){ if(pc?.remoteDescription){try{await pc.addIceCandidate(m.candidate);}catch{}}else pIce.push(m.candidate); }
+    else if(m.type==='peer-left') setSt('Sender disconnected.','dr');
+  };
+  ws.onerror=()=>setSt('Cannot connect to signal server.','dr');
+  window.doAccept=()=>{ if(!dc||dc.readyState!=='open')return; $('abtn').style.display='none'; $('pw').style.display='block'; dc.send(JSON.stringify({type:'accept'})); setSt('Receiving…','dg'); };
+}
+
+function startRelayRecv(relayId){
+  root().innerHTML=`
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Relay download</span><button class="btn bg bsm" onclick="showHome()">← Home</button></div>
+      <div class="stl" id="stl"><span class="dot db pu"></span><span id="stx">Looking up file…</span></div>
+      <div id="finfo" style="display:none">
+        <div class="div"></div>
+        <div class="fr"><span class="fic" id="rico">📁</span><div><div class="fn" id="rname">—</div><div class="fm" id="rmeta">—</div></div></div>
+        <button class="btn ba" id="abtn" onclick="doRDl()">⬇️ Download</button>
+      </div>
+      <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Downloading…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+    </div>`;
+  let info=null;
+  fetch(`/api/relay/info/${relayId}`)
+    .then(r=>r.json())
+    .then(d=>{ if(d.error){setSt(d.error,'dr');return;} info=d; $('rico').textContent=mIco(d.type); $('rname').textContent=d.name; $('rmeta').textContent=fmtB(d.size)+' · relay'; $('finfo').style.display='block'; setSt('File ready — click Download','dg'); })
+    .catch(()=>setSt('Cannot reach server.','dr'));
+  window.doRDl=()=>{
+    if(!info)return;
+    $('abtn').style.display='none'; $('pw').style.display='block'; setSt('Downloading…','db');
+    const xhr=new XMLHttpRequest(); xhr.open('GET',`/api/relay/download/${relayId}`); xhr.responseType='blob';
+    let lL=0,lT=Date.now();
+    xhr.onprogress=e=>{ if(e.lengthComputable){const now=Date.now(),dt=now-lT;let s=0,eta=0;if(dt>300){s=((e.loaded-lL)/dt)*1000;lL=e.loaded;lT=now;}if(s>0)eta=Math.round((e.total-e.loaded)/s);setProg(e.loaded/e.total,'Downloading…',s,eta);}};
+    xhr.onload=()=>{ if(xhr.status===200){saveBlob(xhr.response,info.name);showRecvDone(info,'relay');}else setSt('Download failed.','dr'); };
+    xhr.onerror=()=>setSt('Network error.','dr'); xhr.send();
+  };
+}
+
+function showRecvDone(info,mode){
+  root().innerHTML=`
+    <div class="card fade" style="text-align:center">
+      <div class="dic">⬇️</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">Download complete</div>
+      <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${info.name||info.fileName}</strong> (${fmtB(info.size||info.fileSize)}) saved</p>
+      <div style="margin-bottom:1.25rem"><span class="mtg ${mode==='p2p'?'mp':'mr'}">${mode==='p2p'?'⚡ Direct P2P — never touched a server':'☁️ Via relay — deleted from server'}</span></div>
+      <button class="btn ba" onclick="showRecv()">Receive another</button>
+      <button class="btn bg mt1" onclick="showHome()">← Home</button>
+    </div>`;
+}
+
+showHome();
+</script>
+</body>
+</html>
