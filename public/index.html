@@ -121,6 +121,10 @@ footer a:hover{color:var(--a)}
   </div>
 </div>
 <script>
+window.acceptedBatches = {};
+window.sendQueue = [];
+window.sendQueueIndex = 0;
+
 const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
   : 'wss://fileshare-qhgn.onrender.com/ws';
@@ -235,12 +239,11 @@ function showSend(){
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
       <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
-      
       <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDrop(event)">
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop your file here</div>
         <div class="dzs">or <span>click to browse</span> — any size, any type</div>
-        <input type="file" id="fi" style="display:none" onchange="onFP(event)">
+        <input type="file" id="fi" style="display:none" multiple onchange="onFP(event)">
       </div>
     </div>`;
 }
@@ -248,29 +251,31 @@ function showSend(){
 function onDrop(e){ 
   e.preventDefault(); 
   e.currentTarget.classList.remove('ov'); 
-  const f=e.dataTransfer.files?.[0]; 
-  if(f) {
-    const nn = ($('sender-nickname')?.value || '').trim();
-    localStorage.setItem('fs_nickname', nn);
-    startSend(f); 
+  const files=Array.from(e.dataTransfer.files || []); 
+  if(files.length > 0) {
+    showPrepareTransfer(files, '1to1');
   }
 }
 function onFP(e){ 
-  const f=e.target.files?.[0]; 
-  if(f) {
-    const nn = ($('sender-nickname')?.value || '').trim();
-    localStorage.setItem('fs_nickname', nn);
-    startSend(f); 
+  const files=Array.from(e.target.files || []); 
+  if(files.length > 0) {
+    showPrepareTransfer(files, '1to1');
   }
 }
 
 function startSend(file){
   const code=genC();
   const url=`${location.origin}${location.pathname}?code=${code}`;
+  
+  const item = (window.sendQueue && window.sendQueue[window.sendQueueIndex]) || { index: 0, count: 1 };
+  const idx = item.index;
+  const cnt = item.count;
+  const badgeText = cnt > 1 ? `Waiting for receiver (${idx + 1}/${cnt})` : 'Waiting for receiver';
+  
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem">
-        <span class="bdg binf"><span class="dot db pu"></span> Waiting for receiver</span>
+        <span class="bdg binf"><span class="dot db pu"></span> ${badgeText}</span>
         <button class="btn bg bsm" onclick="showSend()">Cancel</button>
       </div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
@@ -328,19 +333,36 @@ function runSender(file,code){
     dc.onopen=()=>{
       clearTimeout(timer);
       logD('Data channel opened! Sending metadata...');
-      dc.send(JSON.stringify({type:'meta',name:file.name,size:file.size,mimeType:file.type||'application/octet-stream',nickname:localStorage.getItem('fs_nickname')||null}));
-      setSt('Receiver reviewing — waiting for accept…','db');
+      const item = (window.sendQueue && window.sendQueue[window.sendQueueIndex]) || { batchId: null, index: 0, count: 1 };
+      dc.send(JSON.stringify({
+        type: 'meta',
+        name: file.name,
+        size: file.size,
+        mimeType: file.type||'application/octet-stream',
+        nickname: localStorage.getItem('fs_nickname')||null,
+        batchId: item.batchId,
+        batchIndex: item.index,
+        batchCount: item.count
+      }));
+      setSt(`Receiver reviewing — waiting for accept (${item.index + 1}/${item.count})…`,'db');
     };
     dc.onmessage=e=>{
       if(typeof e.data!=='string')return;
       const m=JSON.parse(e.data);
       if(m.type==='accept'){
         logD('Receiver accepted file. Starting direct P2P stream...');
-        setSt('Transferring via P2P…','dg');
+        const item = (window.sendQueue && window.sendQueue[window.sendQueueIndex]) || { index: 0, count: 1 };
+        setSt(`Transferring file ${item.index + 1} of ${item.count} via P2P…`,'dg');
         sendChunks(dc,file,()=>{
           done=true;
           stopTimer();
-          showSendDonePersistent1to1(file, code, dc, pc, ws);
+          if (window.sendQueue && window.sendQueueIndex + 1 < window.sendQueue.length) {
+            window.sendQueueIndex++;
+            const nextItem = window.sendQueue[window.sendQueueIndex];
+            sendPersistent1to1File(nextItem.file, nextItem.batchId, nextItem.index, nextItem.count, dc, pc, ws);
+          } else {
+            showSendDonePersistent1to1(file, code, dc, pc, ws);
+          }
         });
       }
     };
@@ -496,11 +518,23 @@ function runReceiver(code){
             if(msg.type==='meta'){
               meta=msg;
               logD(`Received metadata: "${msg.name}" (${fmtB(msg.size)})`);
+              
+              let batchInfo = '';
+              if (msg.batchCount && msg.batchCount > 1) {
+                batchInfo = ` · [File ${msg.batchIndex + 1} of ${msg.batchCount}]`;
+              }
+              
               $('rico').textContent=mIco(msg.mimeType);
               $('rname').textContent=msg.name;
-              $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:'')+(msg.nickname?' · From '+msg.nickname:'');
+              $('rmeta').textContent=fmtB(msg.size)+(msg.mimeType?' · '+msg.mimeType:'')+(msg.nickname?' · From '+msg.nickname:'') + batchInfo;
               $('finfo').style.display='block';
-              setSt('File ready — click Accept','dg');
+              
+              if (msg.batchId && window.acceptedBatches[msg.batchId]) {
+                logD('Auto-accepting file in batch...');
+                window.doAccept();
+              } else {
+                setSt('File ready — click Accept','dg');
+              }
             }
             if(msg.type==='done'&&meta){
               logD('P2P download complete. Saving file...');
@@ -553,6 +587,9 @@ function runReceiver(code){
     if(!dc||dc.readyState!=='open')return;
     logD('Accepting download. Starting stream request...');
     $('abtn').style.display='none'; $('pw').style.display='block';
+    if (meta && meta.batchId) {
+      window.acceptedBatches[meta.batchId] = true;
+    }
     dc.send(JSON.stringify({type:'accept'})); setSt('Receiving…','dg');
   };
 }
@@ -855,7 +892,7 @@ function setupInboxPeer(code, senderId) {
           
           renderInboxFileEntry(senderId, peer);
           
-          if ($('auto-accept')?.checked) {
+          if ($('auto-accept')?.checked || (msg.batchId && window.acceptedBatches[msg.batchId])) {
             acceptInboxFile(senderId);
           }
         }
@@ -921,6 +958,11 @@ function renderInboxFileEntry(senderId, peer) {
   const nickname = peer.meta.nickname ? esc(peer.meta.nickname.trim()) : '';
   const displaySender = nickname ? `${nickname} (${esc(senderId.slice(0, 8))})` : esc(senderId.slice(0, 8));
   
+  let batchInfo = '';
+  if (peer.meta.batchCount && peer.meta.batchCount > 1) {
+    batchInfo = ` · [File ${peer.meta.batchIndex + 1} of ${peer.meta.batchCount}]`;
+  }
+  
   entry.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
       <div style="display:flex; gap:0.65rem; min-width:0; flex:1;">
@@ -928,7 +970,7 @@ function renderInboxFileEntry(senderId, peer) {
         <div style="min-width:0; flex:1;">
           <div class="fn" style="font-size:0.8rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${formattedName}">${formattedName}</div>
           <div style="font-size:0.7rem; color:var(--m); margin-top:0.1rem;">
-            ${formattedSize} · From <span style="font-family:'IBM Plex Mono',monospace; color:var(--a);">${displaySender}</span>
+            ${formattedSize} · From <span style="font-family:'IBM Plex Mono',monospace; color:var(--a);">${displaySender}</span>${batchInfo}
           </div>
         </div>
       </div>
@@ -973,6 +1015,10 @@ function acceptInboxFile(senderId) {
   if (badge) {
     badge.className = 'bdg binf';
     badge.textContent = 'Connecting';
+  }
+  
+  if (peer.meta && peer.meta.batchId) {
+    window.acceptedBatches[peer.meta.batchId] = true;
   }
   
   peer.dc.send(JSON.stringify({ type: 'accept' }));
@@ -1105,47 +1151,48 @@ function startInboxSender(code) {
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop your file here</div>
         <div class="dzs">to drop files into Inbox <span>${code}</span></div>
-        <input type="file" id="fi" style="display:none" onchange="onFPInbox(event, '${code}')">
+        <input type="file" id="fi" style="display:none" multiple onchange="onFPInbox(event, '${code}')">
       </div>
     </div>`;
 }
 
 function onDropInbox(e, code) {
   e.preventDefault(); e.currentTarget.classList.remove('ov');
-  const f = e.dataTransfer.files?.[0]; 
-  if (f) {
-    const nn = ($('sender-nickname')?.value || '').trim();
-    localStorage.setItem('fs_nickname', nn);
-    startInboxSenderFlow(f, code);
+  const files = Array.from(e.dataTransfer.files || []);
+  if (files.length > 0) {
+    showPrepareTransfer(files, 'inbox', code);
   }
 }
 function onFPInbox(e, code) {
-  const f = e.target.files?.[0]; 
-  if (f) {
-    const nn = ($('sender-nickname')?.value || '').trim();
-    localStorage.setItem('fs_nickname', nn);
-    startInboxSenderFlow(f, code);
+  const files = Array.from(e.target.files || []);
+  if (files.length > 0) {
+    showPrepareTransfer(files, 'inbox', code);
   }
 }
 
 function startInboxSenderFlow(file, code) {
+  const item = (window.sendQueue && window.sendQueue[window.sendQueueIndex]) || { file, index: 0, count: 1, batchId: null };
   if (activeInboxSender.code === code && activeInboxSender.connected && activeInboxSender.dc && activeInboxSender.dc.readyState === 'open') {
-    showInboxSenderProgressUI(file, code);
-    sendInboxFileDirectly(file);
+    showInboxSenderProgressUI(item.file, code, item.index, item.count);
+    sendInboxFileDirectly(item.file, item.batchId, item.index, item.count);
   } else {
     cleanupActiveInboxSender();
     const senderId = 's_' + genC();
     activeInboxSender = { code, senderId, ws: null, pc: null, dc: null, connected: false };
-    showInboxSenderProgressUI(file, code);
-    connectInboxSender(file, code, senderId);
+    showInboxSenderProgressUI(item.file, code, item.index, item.count);
+    connectInboxSender(item.file, code, senderId);
   }
 }
 
-function showInboxSenderProgressUI(file, code) {
+function showInboxSenderProgressUI(file, code, index, count) {
+  const idx = index !== undefined ? index : 0;
+  const cnt = count !== undefined ? count : 1;
+  const badgeText = cnt > 1 ? `Sending file ${idx + 1} of ${cnt}` : 'Sending to Inbox';
+  
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem">
-        <span class="bdg binf"><span class="dot db pu"></span> Sending to Inbox</span>
+        <span class="bdg binf"><span class="dot db pu"></span> ${badgeText}</span>
         <div style="display:flex; gap:0.5rem">
           <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
           <button class="btn bg bsm" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er);">Disconnect</button>
@@ -1207,26 +1254,8 @@ function connectInboxSender(file, code, senderId) {
       activeInboxSender.connected = true;
       logD('P2P channel opened! Sending metadata...');
       setSt('Connected! Sending metadata...', 'dg');
-      sendInboxFileDirectly(file);
-    };
-    
-    dc.onmessage = e => {
-      if (typeof e.data !== 'string') return;
-      const m = JSON.parse(e.data);
-      if (m.type === 'accept') {
-        logD('Inbox receiver accepted file. Starting direct P2P stream...');
-        setSt('Transferring via P2P…', 'dg');
-        $('pw').style.display = 'block';
-        sendChunks(dc, file, () => {
-          logD('File transfer complete.');
-          stopTimer();
-          showInboxSendDone(file, code);
-        });
-      } else if (m.type === 'reject') {
-        logD('Inbox receiver rejected file.');
-        setSt('File rejected by receiver.', 'dr');
-        stopTimer();
-      }
+      const item = window.sendQueue[0];
+      sendInboxFileDirectly(item.file, item.batchId, item.index, item.count);
     };
     
     dc.onclose = () => {
@@ -1275,29 +1304,42 @@ function connectInboxSender(file, code, senderId) {
   };
 }
 
-function sendInboxFileDirectly(file) {
+function sendInboxFileDirectly(file, batchId, index, count) {
   const dc = activeInboxSender.dc;
   if (!dc || dc.readyState !== 'open') return;
+  
+  const bId = batchId || null;
+  const idx = index !== undefined ? index : 0;
+  const cnt = count !== undefined ? count : 1;
   
   dc.send(JSON.stringify({
     type: 'meta',
     name: file.name,
     size: file.size,
     mimeType: file.type || 'application/octet-stream',
-    nickname: localStorage.getItem('fs_nickname') || null
+    nickname: localStorage.getItem('fs_nickname') || null,
+    batchId: bId,
+    batchIndex: idx,
+    batchCount: cnt
   }));
   
   dc.onmessage = e => {
     if (typeof e.data !== 'string') return;
     const m = JSON.parse(e.data);
     if (m.type === 'accept') {
-      logD('Inbox receiver accepted file. Starting direct P2P stream...');
-      setSt('Transferring via P2P…', 'dg');
+      logD(`Inbox receiver accepted file ${idx + 1} of ${cnt}. Starting stream...`);
+      setSt(`Transferring file ${idx + 1} of ${cnt} via P2P…`, 'dg');
       $('pw').style.display = 'block';
       sendChunks(dc, file, () => {
-        logD('File transfer complete.');
         stopTimer();
-        showInboxSendDone(file, activeInboxSender.code);
+        if (window.sendQueue && window.sendQueueIndex + 1 < window.sendQueue.length) {
+          window.sendQueueIndex++;
+          const nextItem = window.sendQueue[window.sendQueueIndex];
+          showInboxSenderProgressUI(nextItem.file, activeInboxSender.code, nextItem.index, nextItem.count);
+          sendInboxFileDirectly(nextItem.file, nextItem.batchId, nextItem.index, nextItem.count);
+        } else {
+          showInboxSendDone(file, activeInboxSender.code);
+        }
       });
     } else if (m.type === 'reject') {
       logD('Inbox receiver rejected file.');
@@ -1323,7 +1365,7 @@ function showInboxSendDone(file, code) {
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop another file here</div>
         <div class="dzs">to send instantly without reconnecting</div>
-        <input type="file" id="fi" style="display:none" onchange="onFPInbox(event, '${code}')">
+        <input type="file" id="fi" style="display:none" multiple onchange="onFPInbox(event, '${code}')">
       </div>
       
       <div style="display:flex; gap:0.5rem; margin-top:1rem;">
@@ -1362,7 +1404,7 @@ function showSendDonePersistent1to1(file, code, dc, pc, ws) {
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop another file here</div>
         <div class="dzs">to send instantly over the same connection</div>
-        <input type="file" id="fi" style="display:none" onchange="onFP1to1Persistent(event)">
+        <input type="file" id="fi" style="display:none" multiple onchange="onFP1to1Persistent(event)">
       </div>
       
       <div style="display:flex; gap:0.5rem; margin-top:1rem;">
@@ -1374,23 +1416,72 @@ function showSendDonePersistent1to1(file, code, dc, pc, ws) {
 
 function onDrop1to1Persistent(e) {
   e.preventDefault(); e.currentTarget.classList.remove('ov');
-  const f = e.dataTransfer.files?.[0]; if (f) send1to1PersistentFile(f);
+  const files = Array.from(e.dataTransfer.files || []);
+  if (files.length > 0) {
+    showPrepareTransfer(files, '1to1persistent');
+  }
 }
 function onFP1to1Persistent(e) {
-  const f = e.target.files?.[0]; if (f) send1to1PersistentFile(f);
+  const files = Array.from(e.target.files || []);
+  if (files.length > 0) {
+    showPrepareTransfer(files, '1to1persistent');
+  }
 }
 
-function send1to1PersistentFile(file) {
+function send1to1PersistentBatch() {
   const { code, dc, pc, ws } = active1to1Sender;
   if (!dc || dc.readyState !== 'open') {
-    startSend(file);
+    startSend(window.sendQueue[0].file);
     return;
   }
+  const item = window.sendQueue[window.sendQueueIndex];
+  sendPersistent1to1File(item.file, item.batchId, item.index, item.count, dc, pc, ws);
+}
+
+function sendPersistent1to1File(file, batchId, index, count, dc, pc, ws) {
+  stopTimer();
+  showSendPersistentProgressUI(file, index, count, dc, pc, ws);
   
-  root().innerHTML=`
+  startTimer();
+  logD(`Sending metadata for batch file ${index + 1} of ${count}...`);
+  dc.send(JSON.stringify({
+    type: 'meta',
+    name: file.name,
+    size: file.size,
+    mimeType: file.type || 'application/octet-stream',
+    nickname: localStorage.getItem('fs_nickname') || null,
+    batchId,
+    batchIndex: index,
+    batchCount: count
+  }));
+  setSt(`Receiver reviewing — waiting for accept (${index + 1}/${count})…`, 'db');
+  
+  dc.onmessage = e => {
+    if (typeof e.data !== 'string') return;
+    const m = JSON.parse(e.data);
+    if (m.type === 'accept') {
+      logD(`Receiver accepted file ${index + 1} of ${count}. Starting stream...`);
+      setSt(`Transferring file ${index + 1} of ${count} via P2P…`, 'dg');
+      $('pw').style.display = 'block';
+      sendChunks(dc, file, () => {
+        stopTimer();
+        if (window.sendQueue && window.sendQueueIndex + 1 < window.sendQueue.length) {
+          window.sendQueueIndex++;
+          const nextItem = window.sendQueue[window.sendQueueIndex];
+          sendPersistent1to1File(nextItem.file, nextItem.batchId, nextItem.index, nextItem.count, dc, pc, ws);
+        } else {
+          showSendDonePersistent1to1(file, code || 'CODE', dc, pc, ws);
+        }
+      });
+    }
+  };
+}
+
+function showSendPersistentProgressUI(file, index, count, dc, pc, ws) {
+  root().innerHTML = `
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem">
-        <span class="bdg binf"><span class="dot db pu"></span> Sending another file</span>
+        <span class="bdg binf"><span class="dot db pu"></span> Sending file ${index + 1} of ${count}</span>
         <button class="btn bg bsm" onclick="disconnect1to1Sender()">Disconnect</button>
       </div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
@@ -1398,27 +1489,7 @@ function send1to1PersistentFile(file) {
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
     </div>`;
-  $('fic').textContent=mIco(file.type);
-  
-  startTimer();
-  logD('Sending metadata for new file...');
-  dc.send(JSON.stringify({ type: 'meta', name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream', nickname: localStorage.getItem('fs_nickname') || null }));
-  setSt('Receiver reviewing — waiting for accept…', 'db');
-  
-  dc.onmessage = e => {
-    if (typeof e.data !== 'string') return;
-    const m = JSON.parse(e.data);
-    if (m.type === 'accept') {
-      logD('Receiver accepted file. Starting direct P2P stream...');
-      setSt('Transferring via P2P…', 'dg');
-      $('pw').style.display = 'block';
-      sendChunks(dc, file, () => {
-        logD('File transfer complete.');
-        stopTimer();
-        showSendDonePersistent1to1(file, code, dc, pc, ws);
-      });
-    }
-  };
+  $('fic').textContent = mIco(file.type);
 }
 
 function disconnect1to1Sender() {
@@ -1490,6 +1561,7 @@ function setup1to1ReceiverDC(dc, lastMeta) {
       const msg = JSON.parse(d);
       if (msg.type === 'meta') {
         meta = msg;
+        active1to1Receiver.meta = msg;
         active1to1Receiver.chunks = [];
         rcvd = 0; spd = 0; lR = 0; lT = 0;
         
@@ -1498,14 +1570,24 @@ function setup1to1ReceiverDC(dc, lastMeta) {
         const waitingMsg = $('recv-waiting-msg');
         if (waitingMsg) waitingMsg.style.display = 'none';
         
+        let batchInfo = '';
+        if (msg.batchCount && msg.batchCount > 1) {
+          batchInfo = ` · [File ${msg.batchIndex + 1} of ${msg.batchCount}]`;
+        }
+        
         $('rico').textContent = mIco(msg.mimeType);
         $('rname').textContent = msg.name;
-        $('rmeta').textContent = fmtB(msg.size) + (msg.mimeType ? ' · ' + msg.mimeType : '') + (msg.nickname ? ' · From ' + msg.nickname : '');
+        $('rmeta').textContent = fmtB(msg.size) + (msg.mimeType ? ' · ' + msg.mimeType : '') + (msg.nickname ? ' · From ' + msg.nickname : '') + batchInfo;
         $('finfo').style.display = 'block';
         $('abtn').style.display = 'block';
         $('pw').style.display = 'none';
         
-        setSt('New file ready — click Accept', 'dg');
+        if (msg.batchId && window.acceptedBatches[msg.batchId]) {
+          logD('Auto-accepting file in batch...');
+          doAccept1to1Persistent();
+        } else {
+          setSt('New file ready — click Accept', 'dg');
+        }
       }
       else if (msg.type === 'done' && meta) {
         logD('P2P download complete. Saving file...');
@@ -1546,6 +1628,11 @@ function doAccept1to1Persistent() {
   $('abtn').style.display = 'none';
   $('pw').style.display = 'block';
   
+  const meta = active1to1Receiver.meta;
+  if (meta && meta.batchId) {
+    window.acceptedBatches[meta.batchId] = true;
+  }
+  
   dc.send(JSON.stringify({ type: 'accept' }));
   setSt('Receiving…', 'dg');
 }
@@ -1555,6 +1642,90 @@ function disconnect1to1Receiver() {
   if (active1to1Receiver.pc) active1to1Receiver.pc.close();
   active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
   showHome();
+}
+
+function showPrepareTransfer(files, type, code) {
+  stopTimer();
+  const savedNickname = localStorage.getItem('fs_nickname') || '';
+  const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
+  
+  let backClick = 'showHome()';
+  if (type === '1to1') backClick = 'showSend()';
+  else if (type === 'inbox') backClick = `startInboxSender('${code}')`;
+  else if (type === '1to1persistent') {
+    const s = getActiveSessionType();
+    if (s && s.type === '1to1sender') {
+      backClick = `showSendDonePersistent1to1(active1to1Sender.lastFile || { name: 'File', size: 0 }, '${s.code}', active1to1Sender.dc, active1to1Sender.pc, active1to1Sender.ws)`;
+    } else {
+      backClick = 'showHome()';
+    }
+  }
+  
+  const fileListHTML = files.map(f => `
+    <div class="fr" style="margin:0.5rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05);">
+      <span class="fic" style="font-size:1.2rem;">${mIco(f.type)}</span>
+      <div style="min-width:0; flex:1;">
+        <div class="fn" style="font-size:0.75rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--a);" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div class="fm" style="font-size:0.65rem; color:var(--m);">${fmtB(f.size)}</div>
+      </div>
+    </div>
+  `).join('');
+  
+  const fileLabel = files.length === 1 ? '1 file selected' : `${files.length} files selected`;
+  
+  root().innerHTML = `
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Prepare Transfer</span>
+        <button class="btn bg bsm" onclick="${backClick}">← Back</button>
+      </div>
+      
+      <div class="slb" style="margin-bottom:0.4rem">${fileLabel} (Total: ${fmtB(totalBytes)})</div>
+      <div style="max-height:160px; overflow-y:auto; margin-bottom:1.25rem; border:1px solid var(--b); border-radius:var(--r); padding:0.5rem; background:var(--bg2);">
+        ${fileListHTML}
+      </div>
+      
+      <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
+      <input class="ci" id="prep-nickname" placeholder="NICKNAME (OPTIONAL)" value="${esc(savedNickname)}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1.25rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      
+      <button class="btn ba" onclick="startBulkTransfer()">
+        ${type === 'inbox' ? '📤 Send to Inbox' : '⚡ Connect & Send'}
+      </button>
+    </div>
+  `;
+  
+  window.preparedFiles = files;
+  window.prepType = type;
+  window.prepCode = code;
+}
+
+function startBulkTransfer() {
+  const nickname = ($('prep-nickname')?.value || '').trim();
+  localStorage.setItem('fs_nickname', nickname);
+  
+  const files = window.preparedFiles;
+  const type = window.prepType;
+  const code = window.prepCode;
+  
+  if (!files || files.length === 0) return;
+  
+  const batchId = 'b_' + genC();
+  window.sendQueue = files.map((f, idx) => ({
+    file: f,
+    index: idx,
+    count: files.length,
+    batchId
+  }));
+  window.sendQueueIndex = 0;
+  
+  if (type === '1to1') {
+    startSend(window.sendQueue[0].file);
+  } else if (type === 'inbox') {
+    const item = window.sendQueue[0];
+    startInboxSenderFlow(item.file, code);
+  } else if (type === '1to1persistent') {
+    send1to1PersistentBatch();
+  }
 }
 
 function showSendToInbox(){
