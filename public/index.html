@@ -125,6 +125,15 @@ window.acceptedBatches = {};
 window.sendQueue = [];
 window.sendQueueIndex = 0;
 
+const safeStorage = {
+  get(key) {
+    try { return localStorage.getItem(key); } catch (e) { console.warn('localStorage get failed', e); return window[key] || ''; }
+  },
+  set(key, val) {
+    try { localStorage.setItem(key, val); } catch (e) { console.warn('localStorage set failed', e); window[key] = val; }
+  }
+};
+
 const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
   : 'wss://fileshare-qhgn.onrender.com/ws';
@@ -167,7 +176,7 @@ const CHARS   = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const $    = id => document.getElementById(id);
 const esc  = s => (s || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 const root = () => $('root');
-const fmtB = b => { if(!b)return'—'; if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; if(b<1073741824)return(b/1048576).toFixed(1)+' MB'; return(b/1073741824).toFixed(2)+' GB'; };
+const fmtB = b => { if(b===undefined||b===null||isNaN(b))return'—'; if(b===0)return'0 B'; if(b<1024)return b+' B'; if(b<1048576)return(b/1024).toFixed(1)+' KB'; if(b<1073741824)return(b/1048576).toFixed(1)+' MB'; return(b/1073741824).toFixed(2)+' GB'; };
 const fmtS = s => { if(s<1024)return s.toFixed(0)+' B/s'; if(s<1048576)return(s/1024).toFixed(0)+' KB/s'; return(s/1048576).toFixed(1)+' MB/s'; };
 const fmtE = s => s<60?s+'s left':s<3600?Math.round(s/60)+'m left':(s/3600).toFixed(1)+'h left';
 const genC  = () => Array.from({length:6},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join('');
@@ -230,7 +239,7 @@ function showHome(){
 
 function showSend(){
   stopTimer();
-  const savedNickname = localStorage.getItem('fs_nickname') || '';
+  const savedNickname = safeStorage.get('fs_nickname') || '';
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
@@ -238,7 +247,7 @@ function showSend(){
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
-      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())">
       <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDrop(event)">
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
         <div class="dzt">Drop your file here</div>
@@ -339,7 +348,7 @@ function runSender(file,code){
         name: file.name,
         size: file.size,
         mimeType: file.type||'application/octet-stream',
-        nickname: localStorage.getItem('fs_nickname')||null,
+        nickname: safeStorage.get('fs_nickname')||null,
         batchId: item.batchId,
         batchIndex: item.index,
         batchCount: item.count
@@ -1137,7 +1146,7 @@ function closeInbox() {
 
 function startInboxSender(code) {
   stopTimer();
-  const savedNickname = localStorage.getItem('fs_nickname') || '';
+  const savedNickname = safeStorage.get('fs_nickname') || '';
   root().innerHTML = `
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
@@ -1145,7 +1154,7 @@ function startInboxSender(code) {
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
-      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())">
       
       <div class="dz" id="dz" onclick="$('fi').click()" ondragover="event.preventDefault();this.classList.add('ov')" ondragleave="this.classList.remove('ov')" ondrop="onDropInbox(event, '${code}')">
         <div class="dzi"><svg viewBox="0 0 44 44" fill="none"><path d="M22 8v22M12 18l10-10 10 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 36h28" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
@@ -1154,6 +1163,7 @@ function startInboxSender(code) {
         <input type="file" id="fi" style="display:none" multiple onchange="onFPInbox(event, '${code}')">
       </div>
     </div>`;
+}
 }
 
 function onDropInbox(e, code) {
@@ -1317,7 +1327,7 @@ function sendInboxFileDirectly(file, batchId, index, count) {
     name: file.name,
     size: file.size,
     mimeType: file.type || 'application/octet-stream',
-    nickname: localStorage.getItem('fs_nickname') || null,
+    nickname: safeStorage.get('fs_nickname') || null,
     batchId: bId,
     batchIndex: idx,
     batchCount: cnt
@@ -1449,7 +1459,7 @@ function sendPersistent1to1File(file, batchId, index, count, dc, pc, ws) {
     name: file.name,
     size: file.size,
     mimeType: file.type || 'application/octet-stream',
-    nickname: localStorage.getItem('fs_nickname') || null,
+    nickname: safeStorage.get('fs_nickname') || null,
     batchId,
     batchIndex: index,
     batchCount: count
@@ -1646,8 +1656,8 @@ function disconnect1to1Receiver() {
 
 function showPrepareTransfer(files, type, code) {
   stopTimer();
-  const savedNickname = localStorage.getItem('fs_nickname') || '';
-  const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
+  const savedNickname = safeStorage.get('fs_nickname') || '';
+  const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
   
   let backClick = 'showHome()';
   if (type === '1to1') backClick = 'showSend()';
@@ -1661,13 +1671,16 @@ function showPrepareTransfer(files, type, code) {
     }
   }
   
-  const fileListHTML = files.map(f => `
-    <div class="fr" style="margin:0.5rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05);">
-      <span class="fic" style="font-size:1.2rem;">${mIco(f.type)}</span>
-      <div style="min-width:0; flex:1;">
-        <div class="fn" style="font-size:0.75rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--a);" title="${esc(f.name)}">${esc(f.name)}</div>
-        <div class="fm" style="font-size:0.65rem; color:var(--m);">${fmtB(f.size)}</div>
+  const fileListHTML = files.map((f, i) => `
+    <div class="fr" style="margin:0.5rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
+      <div style="display:flex; align-items:center; gap:0.65rem; min-width:0; flex:1;">
+        <span class="fic" style="font-size:1.2rem; flex-shrink:0;">${mIco(f.type)}</span>
+        <div style="min-width:0; flex:1;">
+          <div class="fn" style="font-size:0.75rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--a);" title="${esc(f.name)}">${esc(f.name)}</div>
+          <div class="fm" style="font-size:0.65rem; color:var(--m);">${fmtB(f.size)}</div>
+        </div>
       </div>
+      <button class="btn bg bsm" onclick="removePreparedFile(${i})" style="width:auto; padding:0.2rem 0.5rem; border-color:var(--er); color:var(--er); font-size:0.7rem; flex-shrink:0;">✕</button>
     </div>
   `).join('');
   
@@ -1680,13 +1693,20 @@ function showPrepareTransfer(files, type, code) {
         <button class="btn bg bsm" onclick="${backClick}">← Back</button>
       </div>
       
-      <div class="slb" style="margin-bottom:0.4rem">${fileLabel} (Total: ${fmtB(totalBytes)})</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+        <div class="slb" style="margin-bottom:0;">${fileLabel} (Total: ${fmtB(totalBytes)})</div>
+        <button class="btn bg bsm" onclick="$('add-more-files').click()" style="padding:0.25rem 0.6rem; font-size:0.75rem; display:flex; align-items:center; gap:0.3rem; border-color:var(--a); color:var(--a); width:auto;">
+          ➕ Add Files
+        </button>
+      </div>
+      <input type="file" id="add-more-files" style="display:none" multiple onchange="onAddMoreFiles(event)">
+      
       <div style="max-height:160px; overflow-y:auto; margin-bottom:1.25rem; border:1px solid var(--b); border-radius:var(--r); padding:0.5rem; background:var(--bg2);">
         ${fileListHTML}
       </div>
       
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
-      <input class="ci" id="prep-nickname" placeholder="NICKNAME (OPTIONAL)" value="${esc(savedNickname)}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1.25rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      <input class="ci" id="prep-nickname" placeholder="NICKNAME (OPTIONAL)" value="${esc(savedNickname)}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1.25rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())" onkeydown="if(event.key==='Enter')startBulkTransfer()">
       
       <button class="btn ba" onclick="startBulkTransfer()">
         ${type === 'inbox' ? '📤 Send to Inbox' : '⚡ Connect & Send'}
@@ -1699,9 +1719,29 @@ function showPrepareTransfer(files, type, code) {
   window.prepCode = code;
 }
 
+function onAddMoreFiles(e) {
+  const newFiles = Array.from(e.target.files || []);
+  if (newFiles.length > 0) {
+    window.preparedFiles = (window.preparedFiles || []).concat(newFiles);
+    showPrepareTransfer(window.preparedFiles, window.prepType, window.prepCode);
+  }
+}
+
+function removePreparedFile(idx) {
+  window.preparedFiles.splice(idx, 1);
+  if (window.preparedFiles.length === 0) {
+    if (window.prepType === '1to1') showSend();
+    else if (window.prepType === 'inbox') startInboxSender(window.prepCode);
+    else if (window.prepType === '1to1persistent') resumeActiveSession();
+    else showHome();
+  } else {
+    showPrepareTransfer(window.preparedFiles, window.prepType, window.prepCode);
+  }
+}
+
 function startBulkTransfer() {
-  const nickname = ($('prep-nickname')?.value || '').trim();
-  localStorage.setItem('fs_nickname', nickname);
+  const nickname = ($('prep-nickname')?.value || '').trim().toUpperCase();
+  safeStorage.set('fs_nickname', nickname);
   
   const files = window.preparedFiles;
   const type = window.prepType;
@@ -1730,7 +1770,7 @@ function startBulkTransfer() {
 
 function showSendToInbox(){
   stopTimer();
-  const savedNickname = localStorage.getItem('fs_nickname') || '';
+  const savedNickname = safeStorage.get('fs_nickname') || '';
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
@@ -1738,7 +1778,7 @@ function showSendToInbox(){
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
-      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="localStorage.setItem('fs_nickname',this.value.trim())">
+      <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())">
       
       <div class="slb" style="margin-bottom:0.15rem">Enter the 6-character Inbox Code</div>
       <input class="ci" id="ib-code" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryConnectInbox()" style="margin:0.4rem 0 1rem;">
@@ -1756,8 +1796,8 @@ function tryConnectInbox(){
     setTimeout(()=>el.style.borderColor='',1400);
     return;
   }
-  const nn = ($('sender-nickname')?.value || '').trim();
-  localStorage.setItem('fs_nickname', nn);
+  const nn = ($('sender-nickname')?.value || '').trim().toUpperCase();
+  safeStorage.set('fs_nickname', nn);
   startInboxSender(c);
 }
 
