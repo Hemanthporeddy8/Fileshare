@@ -653,7 +653,8 @@ let active1to1Sender = { code: null, dc: null, pc: null, ws: null };
 let active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
 let activeInboxSender = { code: null, senderId: null, ws: null, pc: null, dc: null, connected: false };
 let inboxWs = null;
-let inboxPeers = new Map(); // senderId -> { pc, dc, chunks, meta, elId, pIce, accepted, lT, lR, spd }
+let inboxPeers = new Map(); // senderId -> { pc, dc, pIce, activeFileId }
+let receivedFiles = new Map(); // fileId -> { id, senderId, meta, chunks, blob, accepted, elId, status, ratio, speed, eta, lT, lR }
 
 function showCreateInbox() {
   const code = genC();
@@ -695,6 +696,13 @@ function showInboxDashboard(code) {
           <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
         </label>
       </div>
+
+      <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b);">
+        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer; user-select:none;">
+          <input type="checkbox" id="select-all-files" onchange="toggleSelectAllFiles(this)" style="accent-color:var(--a); cursor:pointer;"> Select All
+        </label>
+        <button class="btn ba bsm" id="download-selected-btn" onclick="downloadSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto;">⬇️ Download Selected (<span id="selected-count">0</span>)</button>
+      </div>
       
       <div id="inbox-files" style="display:flex; flex-direction:column; gap:0.75rem; max-height:280px; overflow-y:auto; padding-right:0.25rem;">
         <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
@@ -724,53 +732,61 @@ function showInboxDashboard(code) {
     const fileContainer = $('inbox-files');
     if (fileContainer) {
       fileContainer.innerHTML = '';
-      if (inboxPeers.size === 0) {
+      if (receivedFiles.size === 0) {
         fileContainer.innerHTML = `
           <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
             No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
           </div>`;
+        const actionsBar = $('inbox-bulk-actions');
+        if (actionsBar) actionsBar.style.display = 'none';
       } else {
-        for (const [senderId, peer] of inboxPeers) {
-          if (peer.meta) {
-            renderInboxFileEntry(senderId, peer);
-            if (peer.disconnected) {
-              $(`accept-row-${peer.elId}`).style.display = 'none';
-              if (peer.blob) {
-                $(`badge-${peer.elId}`).className = 'bdg bok';
-                $(`badge-${peer.elId}`).textContent = 'Completed';
-                $(`completed-row-${peer.elId}`).style.display = 'flex';
-                if (peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'))) {
-                  $(`preview-btn-${peer.elId}`).style.display = 'block';
-                }
-              } else {
-                $(`badge-${peer.elId}`).className = 'bdg bwn';
-                $(`badge-${peer.elId}`).textContent = 'Disconnected';
-                $(`completed-row-${peer.elId}`).style.display = 'none';
-              }
-            } else if (peer.accepted) {
-              $(`accept-row-${peer.elId}`).style.display = 'none';
-              $(`progress-row-${peer.elId}`).style.display = 'block';
-              const pct = peer.chunks.length > 0 ? Math.min(1, peer.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0) / peer.meta.size) : 0;
-              $(`bar-${peer.elId}`).style.width = (pct * 100).toFixed(1) + '%';
-              $(`percent-${peer.elId}`).textContent = Math.round(pct * 100) + '%';
-              if (pct === 1 || peer.blob) {
-                $(`badge-${peer.elId}`).className = 'bdg bok';
-                $(`badge-${peer.elId}`).textContent = 'Completed';
-                $(`progress-row-${peer.elId}`).style.display = 'block';
-                $(`label-${peer.elId}`).textContent = 'Saved';
-                $(`percent-${peer.elId}`).textContent = '100%';
-                $(`bar-${peer.elId}`).style.width = '100%';
-                $(`completed-row-${peer.elId}`).style.display = 'flex';
-                if (peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'))) {
-                  $(`preview-btn-${peer.elId}`).style.display = 'block';
-                }
-              } else {
-                $(`badge-${peer.elId}`).className = 'bdg binf';
-                $(`badge-${peer.elId}`).textContent = 'Downloading';
-              }
+        const actionsBar = $('inbox-bulk-actions');
+        if (actionsBar) actionsBar.style.display = 'flex';
+        for (const [fileId, file] of receivedFiles) {
+          renderInboxFileEntry(fileId);
+          const elId = file.elId;
+          const badge = $(`badge-${elId}`);
+          if (file.status === 'completed') {
+            if (badge) {
+              badge.className = 'bdg bok';
+              badge.textContent = 'Completed';
             }
+            $(`accept-row-${elId}`).style.display = 'none';
+            $(`completed-row-${elId}`).style.display = 'flex';
+            const isPreviewable = file.meta.mimeType && (file.meta.mimeType.startsWith('image/') || file.meta.mimeType.startsWith('audio/') || file.meta.mimeType.startsWith('video/'));
+            if (isPreviewable) {
+              $(`preview-btn-${elId}`).style.display = 'block';
+            }
+            const cb = document.querySelector(`.inbox-file-cb[data-file-id="${fileId}"]`);
+            if (cb) cb.disabled = false;
+          } else if (file.status === 'downloading') {
+            if (badge) {
+              badge.className = 'bdg binf';
+              badge.textContent = 'Downloading';
+            }
+            $(`accept-row-${elId}`).style.display = 'none';
+            $(`progress-row-${elId}`).style.display = 'block';
+            $(`bar-${elId}`).style.width = (file.ratio * 100).toFixed(1) + '%';
+            $(`percent-${elId}`).textContent = Math.round(file.ratio * 100) + '%';
+          } else if (file.status === 'waiting') {
+            if (badge) {
+              badge.className = 'bdg bwn';
+              badge.textContent = 'Waiting Accept';
+            }
+            $(`accept-row-${elId}`).style.display = 'flex';
+            $(`completed-row-${elId}`).style.display = 'none';
+            $(`progress-row-${elId}`).style.display = 'none';
+          } else { // closed, disconnected, failed
+            if (badge) {
+              badge.className = 'bdg bwn';
+              badge.textContent = 'Disconnected';
+            }
+            $(`accept-row-${elId}`).style.display = 'none';
+            $(`completed-row-${elId}`).style.display = 'none';
+            $(`progress-row-${elId}`).style.display = 'none';
           }
         }
+        updateSelectAllState();
       }
     }
   } else {
@@ -863,12 +879,8 @@ function setupInboxPeer(code, senderId) {
   const peer = {
     pc,
     dc: null,
-    chunks: [],
-    meta: null,
     pIce: [],
-    elId: 'file-' + senderId + '-' + Date.now(),
-    accepted: false,
-    lT: 0, lR: 0, spd: 0
+    activeFileId: null
   };
   
   inboxPeers.set(senderId, peer);
@@ -895,51 +907,84 @@ function setupInboxPeer(code, senderId) {
       if (typeof d === 'string') {
         const msg = JSON.parse(d);
         if (msg.type === 'meta') {
-          peer.meta = msg;
-          peer.chunks = [];
-          peer.lT = 0; peer.lR = 0; peer.spd = 0;
+          const fileId = 'f_' + genC();
+          const fileEntry = {
+            id: fileId,
+            senderId: senderId,
+            meta: msg,
+            chunks: [],
+            blob: null,
+            accepted: false,
+            elId: 'file-' + fileId,
+            status: 'waiting',
+            ratio: 0,
+            speed: 0,
+            eta: 0,
+            lT: 0,
+            lR: 0
+          };
+          receivedFiles.set(fileId, fileEntry);
+          peer.activeFileId = fileId;
+          
           const displayName = msg.nickname ? `${msg.nickname} (${senderId.slice(0, 8)})` : senderId.slice(0, 8);
           logD(`Incoming file from ${displayName}: "${msg.name}" (${fmtB(msg.size)})`);
           
           const ph = $('inbox-placeholder');
           if (ph) ph.remove();
           
-          renderInboxFileEntry(senderId, peer);
+          renderInboxFileEntry(fileId);
           
           if ($('auto-accept')?.checked || (msg.batchId && window.acceptedBatches[msg.batchId])) {
-            acceptInboxFile(senderId);
+            acceptInboxFile(fileId);
           }
         }
         else if (msg.type === 'done') {
-          const displayName = peer.meta.nickname ? `${peer.meta.nickname} (${senderId.slice(0, 8)})` : senderId.slice(0, 8);
-          logD(`P2P download from ${displayName} complete.`);
-          const blob = new Blob(peer.chunks, { type: peer.meta.mimeType || 'application/octet-stream' });
-          peer.blob = blob;
-          updateInboxFileProgress(senderId, 1, 'Completed', 0, 0);
-          if ($('auto-accept')?.checked) {
-            saveBlob(blob, peer.meta.name);
+          const fileId = peer.activeFileId;
+          const file = fileId ? receivedFiles.get(fileId) : null;
+          if (file) {
+            const displayName = file.meta.nickname ? `${file.meta.nickname} (${senderId.slice(0, 8)})` : senderId.slice(0, 8);
+            logD(`P2P download from ${displayName} complete.`);
+            const blob = new Blob(file.chunks, { type: file.meta.mimeType || 'application/octet-stream' });
+            file.blob = blob;
+            file.status = 'completed';
+            file.ratio = 1;
+            updateInboxFileProgress(fileId, 1, 'Completed', 0, 0);
+            saveBlob(blob, file.meta.name);
+            file.chunks = []; // Clear chunks memory
           }
-          peer.chunks = [];
+          peer.activeFileId = null;
         }
       } else {
-        if (!peer.lT) peer.lT = Date.now();
-        peer.chunks.push(d);
-        const rcvd = peer.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-        const now = Date.now();
-        const dt = now - peer.lT;
-        if (dt >= 400) {
-          peer.spd = ((rcvd - peer.lR) / dt) * 1000;
-          peer.lR = rcvd;
-          peer.lT = now;
+        const fileId = peer.activeFileId;
+        const file = fileId ? receivedFiles.get(fileId) : null;
+        if (file) {
+          if (!file.lT) file.lT = Date.now();
+          file.chunks.push(d);
+          const rcvd = file.chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+          const now = Date.now();
+          const dt = now - file.lT;
+          if (dt >= 400) {
+            file.speed = ((rcvd - file.lR) / dt) * 1000;
+            file.lR = rcvd;
+            file.lT = now;
+          }
+          const eta = file.speed > 0 ? Math.round((file.meta.size - rcvd) / file.speed) : 0;
+          file.ratio = rcvd / file.meta.size;
+          updateInboxFileProgress(fileId, file.ratio, 'Downloading', file.speed, eta);
         }
-        const eta = peer.spd > 0 && peer.meta ? Math.round((peer.meta.size - rcvd) / peer.spd) : 0;
-        updateInboxFileProgress(senderId, rcvd / peer.meta.size, 'Downloading', peer.spd, eta);
       }
     };
     
     channel.onclose = () => {
       logD(`P2P channel with ${senderId} closed.`);
-      updateInboxFileProgress(senderId, null, 'Closed', 0, 0);
+      const fileId = peer.activeFileId;
+      if (fileId) {
+        const file = receivedFiles.get(fileId);
+        if (file && file.status !== 'completed') {
+          file.status = 'disconnected';
+          updateInboxFileProgress(fileId, null, 'Closed', 0, 0);
+        }
+      }
     };
   };
   
@@ -954,32 +999,36 @@ function updateInboxConnectedCount() {
   }
 }
 
-function renderInboxFileEntry(senderId, peer) {
+function renderInboxFileEntry(fileId) {
   const fileContainer = $('inbox-files');
   if (!fileContainer) return;
   
-  let entry = $(peer.elId);
+  const file = receivedFiles.get(fileId);
+  if (!file) return;
+  
+  let entry = $(file.elId);
   if (entry) entry.remove();
   
   entry = document.createElement('div');
-  entry.id = peer.elId;
+  entry.id = file.elId;
   entry.className = 'fade';
   entry.style.cssText = 'background:var(--s); border:1px solid var(--b); border-radius:var(--r); padding:0.85rem; display:flex; flex-direction:column; gap:0.6rem;';
   
-  const formattedName = peer.meta.name;
-  const formattedSize = fmtB(peer.meta.size);
-  const icon = mIco(peer.meta.mimeType);
-  const nickname = peer.meta.nickname ? esc(peer.meta.nickname.trim()) : '';
-  const displaySender = nickname ? `${nickname} (${esc(senderId.slice(0, 8))})` : esc(senderId.slice(0, 8));
+  const formattedName = file.meta.name;
+  const formattedSize = fmtB(file.meta.size);
+  const icon = mIco(file.meta.mimeType);
+  const nickname = file.meta.nickname ? esc(file.meta.nickname.trim()) : '';
+  const displaySender = nickname ? `${nickname} (${esc(file.senderId.slice(0, 8))})` : esc(file.senderId.slice(0, 8));
   
   let batchInfo = '';
-  if (peer.meta.batchCount && peer.meta.batchCount > 1) {
-    batchInfo = ` · [File ${peer.meta.batchIndex + 1} of ${peer.meta.batchCount}]`;
+  if (file.meta.batchCount && file.meta.batchCount > 1) {
+    batchInfo = ` · [File ${file.meta.batchIndex + 1} of ${file.meta.batchCount}]`;
   }
   
   entry.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
-      <div style="display:flex; gap:0.65rem; min-width:0; flex:1;">
+      <div style="display:flex; gap:0.65rem; min-width:0; flex:1; align-items:center;">
+        <input type="checkbox" class="inbox-file-cb" data-file-id="${fileId}" onchange="updateSelectAllState()" style="accent-color:var(--a); cursor:pointer;" ${file.status === 'completed' ? '' : 'disabled'}>
         <span style="font-size:1.5rem; flex-shrink:0;">${icon}</span>
         <div style="min-width:0; flex:1;">
           <div class="fn" style="font-size:0.8rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${formattedName}">${formattedName}</div>
@@ -988,116 +1037,141 @@ function renderInboxFileEntry(senderId, peer) {
           </div>
         </div>
       </div>
-      <div id="badge-${peer.elId}" class="bdg bwn" style="font-size:0.65rem; padding:0.15rem 0.5rem; flex-shrink:0;">Waiting Accept</div>
+      <div id="badge-${file.elId}" class="bdg bwn" style="font-size:0.65rem; padding:0.15rem 0.5rem; flex-shrink:0;">Waiting Accept</div>
     </div>
     
-    <div id="accept-row-${peer.elId}" style="display:flex; gap:0.5rem; margin-top:0.25rem;">
-      <button class="btn ba bsm" onclick="acceptInboxFile('${senderId}')" style="flex:1;">⬇️ Accept &amp; Download</button>
-      <button class="btn bg bsm" onclick="rejectInboxFile('${senderId}')" style="width:auto; padding:0 0.75rem;">✕</button>
+    <div id="accept-row-${file.elId}" style="display:flex; gap:0.5rem; margin-top:0.25rem;">
+      <button class="btn ba bsm" onclick="acceptInboxFile('${fileId}')" style="flex:1;">⬇️ Accept &amp; Download</button>
+      <button class="btn bg bsm" onclick="rejectInboxFile('${fileId}')" style="width:auto; padding:0 0.75rem;">✕</button>
     </div>
     
-    <div id="completed-row-${peer.elId}" style="display:none; gap:0.5rem; margin-top:0.25rem;">
-      <button class="btn ba bsm" id="preview-btn-${peer.elId}" onclick="previewInboxFile('${senderId}')" style="flex:1; display:none;">👁️ Preview</button>
-      <button class="btn bg bsm" onclick="deleteInboxFile('${senderId}', '${peer.elId}')" style="border-color:var(--er); color:var(--er); flex:1;">🗑️ Delete</button>
+    <div id="completed-row-${file.elId}" style="display:none; gap:0.5rem; margin-top:0.25rem;">
+      <button class="btn ba bsm" id="preview-btn-${file.elId}" onclick="previewInboxFile('${fileId}')" style="flex:1; display:none;">👁️ Preview</button>
+      <button class="btn bg bsm" onclick="downloadInboxFile('${fileId}')" style="flex:1;">⬇️ Download</button>
+      <button class="btn bg bsm" onclick="deleteInboxFile('${fileId}', '${file.elId}')" style="border-color:var(--er); color:var(--er); flex:1;">🗑️ Delete</button>
     </div>
     
-    <div id="progress-row-${peer.elId}" style="display:none;">
+    <div id="progress-row-${file.elId}" style="display:none;">
       <div class="pr" style="font-size:0.68rem; color:var(--m2); margin-bottom:0.3rem;">
-        <span id="label-${peer.elId}">Receiving...</span>
+        <span id="label-${file.elId}">Receiving...</span>
         <span style="display:flex; gap:0.5rem;">
-          <span id="speed-${peer.elId}" style="color:var(--m)"></span>
-          <span id="eta-${peer.elId}" style="color:var(--m)"></span>
-          <strong id="percent-${peer.elId}" style="color:var(--t)">0%</strong>
+          <span id="speed-${file.elId}" style="color:var(--m)"></span>
+          <span id="eta-${file.elId}" style="color:var(--m)"></span>
+          <strong id="percent-${file.elId}" style="color:var(--t)">0%</strong>
         </span>
       </div>
-      <div class="pt" style="height:4px;"><div class="pf" id="bar-${peer.elId}" style="width:0%"></div></div>
+      <div class="pt" style="height:4px;"><div class="pf" id="bar-${file.elId}" style="width:0%"></div></div>
     </div>
   `;
   
   fileContainer.insertBefore(entry, fileContainer.firstChild);
+  
+  const actionsBar = $('inbox-bulk-actions');
+  if (actionsBar) actionsBar.style.display = 'flex';
 }
 
-function acceptInboxFile(senderId) {
-  const peer = inboxPeers.get(senderId);
+function acceptInboxFile(fileId) {
+  const file = receivedFiles.get(fileId);
+  if (!file) return;
+  
+  const peer = inboxPeers.get(file.senderId);
   if (!peer || !peer.dc || peer.dc.readyState !== 'open') return;
   
-  peer.accepted = true;
-  $(`accept-row-${peer.elId}`).style.display = 'none';
-  $(`progress-row-${peer.elId}`).style.display = 'block';
+  file.accepted = true;
+  file.status = 'downloading';
+  $(`accept-row-${file.elId}`).style.display = 'none';
+  $(`progress-row-${file.elId}`).style.display = 'block';
   
-  const badge = $(`badge-${peer.elId}`);
+  const badge = $(`badge-${file.elId}`);
   if (badge) {
     badge.className = 'bdg binf';
     badge.textContent = 'Connecting';
   }
   
-  if (peer.meta && peer.meta.batchId) {
-    window.acceptedBatches[peer.meta.batchId] = true;
+  if (file.meta && file.meta.batchId) {
+    window.acceptedBatches[file.meta.batchId] = true;
   }
   
   peer.dc.send(JSON.stringify({ type: 'accept' }));
 }
 
-function rejectInboxFile(senderId) {
-  const peer = inboxPeers.get(senderId);
-  if (!peer) return;
+function rejectInboxFile(fileId) {
+  const file = receivedFiles.get(fileId);
+  if (!file) return;
   
-  const entry = $(peer.elId);
+  const entry = $(file.elId);
   if (entry) entry.remove();
   
-  if (peer.dc && peer.dc.readyState === 'open') {
-    peer.dc.send(JSON.stringify({ type: 'reject' }));
-    peer.dc.close();
+  const peer = inboxPeers.get(file.senderId);
+  if (peer) {
+    if (peer.dc && peer.dc.readyState === 'open') {
+      peer.dc.send(JSON.stringify({ type: 'reject' }));
+      peer.dc.close();
+    }
+    cleanupInboxPeer(file.senderId);
   }
-  cleanupInboxPeer(senderId);
+  receivedFiles.delete(fileId);
+  updateInboxBulkActionsVisibility();
 }
 
-function updateInboxFileProgress(senderId, ratio, status, speed, eta) {
-  const peer = inboxPeers.get(senderId);
-  if (!peer) return;
+function updateInboxFileProgress(fileId, ratio, status, speed, eta) {
+  const file = receivedFiles.get(fileId);
+  if (!file) return;
   
-  const badge = $(`badge-${peer.elId}`);
+  const badge = $(`badge-${file.elId}`);
   if (badge) {
     if (status === 'Downloading') {
       badge.className = 'bdg binf';
       badge.textContent = 'Downloading';
-      $(`accept-row-${peer.elId}`).style.display = 'none';
-      $(`progress-row-${peer.elId}`).style.display = 'block';
+      $(`accept-row-${file.elId}`).style.display = 'none';
+      $(`progress-row-${file.elId}`).style.display = 'block';
     } else if (status === 'Completed') {
       badge.className = 'bdg bok';
       badge.textContent = 'Completed';
-      $(`progress-row-${peer.elId}`).style.display = 'block';
-      $(`label-${peer.elId}`).textContent = 'Saved';
-      $(`percent-${peer.elId}`).textContent = '100%';
-      $(`bar-${peer.elId}`).style.width = '100%';
-      $(`speed-${peer.elId}`).textContent = '';
-      $(`eta-${peer.elId}`).textContent = '';
+      $(`progress-row-${file.elId}`).style.display = 'block';
+      $(`label-${file.elId}`).textContent = 'Saved';
+      $(`percent-${file.elId}`).textContent = '100%';
+      $(`bar-${file.elId}`).style.width = '100%';
+      $(`speed-${file.elId}`).textContent = '';
+      $(`eta-${file.elId}`).textContent = '';
       
-      $(`accept-row-${peer.elId}`).style.display = 'none';
-      $(`completed-row-${peer.elId}`).style.display = 'flex';
+      $(`accept-row-${file.elId}`).style.display = 'none';
+      $(`completed-row-${file.elId}`).style.display = 'flex';
       
-      const isPreviewable = peer.meta && peer.meta.mimeType && (peer.meta.mimeType.startsWith('image/') || peer.meta.mimeType.startsWith('audio/') || peer.meta.mimeType.startsWith('video/'));
+      const isPreviewable = file.meta && file.meta.mimeType && (file.meta.mimeType.startsWith('image/') || file.meta.mimeType.startsWith('audio/') || file.meta.mimeType.startsWith('video/'));
       if (isPreviewable) {
-        $(`preview-btn-${peer.elId}`).style.display = 'block';
+        $(`preview-btn-${file.elId}`).style.display = 'block';
       }
       
+      const cb = document.querySelector(`.inbox-file-cb[data-file-id="${fileId}"]`);
+      if (cb) {
+        cb.disabled = false;
+      }
+      updateSelectAllState();
+      
       setTimeout(() => {
-        const pr = $(`progress-row-${peer.elId}`);
+        const pr = $(`progress-row-${file.elId}`);
         if (pr) pr.style.display = 'none';
       }, 3000);
     } else if (status === 'Closed' || status === 'Disconnected') {
       badge.className = 'bdg bwn';
       badge.textContent = 'Disconnected';
-      $(`accept-row-${peer.elId}`).style.display = 'none';
+      $(`accept-row-${file.elId}`).style.display = 'none';
+      const cb = document.querySelector(`.inbox-file-cb[data-file-id="${fileId}"]`);
+      if (cb) {
+        cb.disabled = true;
+        cb.checked = false;
+      }
+      updateSelectAllState();
     }
   }
   
   if (ratio !== null && status === 'Downloading') {
     const pct = Math.round(ratio * 100);
-    const bar = $(`bar-${peer.elId}`);
-    const percent = $(`percent-${peer.elId}`);
-    const spdEl = $(`speed-${peer.elId}`);
-    const etaEl = $(`eta-${peer.elId}`);
+    const bar = $(`bar-${file.elId}`);
+    const percent = $(`percent-${file.elId}`);
+    const spdEl = $(`speed-${file.elId}`);
+    const etaEl = $(`eta-${file.elId}`);
     
     if (bar) bar.style.width = ratio * 100 + '%';
     if (percent) percent.textContent = pct + '%';
@@ -1114,26 +1188,29 @@ function cleanupInboxPeer(senderId) {
     peer.pc.close();
   }
   
-  const badge = $(`badge-${peer.elId}`);
-  if (badge) {
-    if (peer.blob) {
-      badge.className = 'bdg bok';
-      badge.textContent = 'Completed';
-    } else {
-      badge.className = 'bdg bwn';
-      badge.textContent = 'Disconnected';
+  for (const [fileId, file] of receivedFiles) {
+    if (file.senderId === senderId && file.status !== 'completed') {
+      file.status = 'disconnected';
+      const badge = $(`badge-${file.elId}`);
+      if (badge) {
+        badge.className = 'bdg bwn';
+        badge.textContent = 'Disconnected';
+      }
+      const acceptRow = $(`accept-row-${file.elId}`);
+      if (acceptRow) acceptRow.style.display = 'none';
+      const progressRow = $(`progress-row-${file.elId}`);
+      if (progressRow) progressRow.style.display = 'none';
+      const cb = document.querySelector(`.inbox-file-cb[data-file-id="${fileId}"]`);
+      if (cb) {
+        cb.disabled = true;
+        cb.checked = false;
+      }
     }
   }
   
-  const acceptRow = $(`accept-row-${peer.elId}`);
-  if (acceptRow) acceptRow.style.display = 'none';
-  
-  if (!peer.blob) {
-    inboxPeers.delete(senderId);
-  } else {
-    peer.disconnected = true;
-  }
+  inboxPeers.delete(senderId);
   updateInboxConnectedCount();
+  updateSelectAllState();
 }
 
 function closeInbox() {
@@ -1146,6 +1223,7 @@ function closeInbox() {
     cleanupInboxPeer(senderId);
   }
   inboxPeers.clear();
+  receivedFiles.clear();
   showHome();
 }
 
@@ -1828,33 +1906,94 @@ function resumeActiveSession() {
   }
 }
 
-function previewInboxFile(senderId) {
-  const peer = inboxPeers.get(senderId);
-  if (peer && peer.blob && peer.meta) {
-    showPreviewModal(peer.blob, peer.meta.name);
+function previewInboxFile(fileId) {
+  const file = receivedFiles.get(fileId);
+  if (file && file.blob && file.meta) {
+    showPreviewModal(file.blob, file.meta.name);
   }
 }
 
-function downloadInboxFile(senderId) {
-  const peer = inboxPeers.get(senderId);
-  if (peer && peer.blob && peer.meta) {
-    saveBlob(peer.blob, peer.meta.name);
+function downloadInboxFile(fileId) {
+  const file = receivedFiles.get(fileId);
+  if (file && file.blob && file.meta) {
+    saveBlob(file.blob, file.meta.name);
   }
 }
 
-function deleteInboxFile(senderId, elId) {
+function deleteInboxFile(fileId, elId) {
   const el = $(elId);
   if (el) el.remove();
   
-  inboxPeers.delete(senderId);
+  receivedFiles.delete(fileId);
+  updateInboxBulkActionsVisibility();
+}
+
+function toggleSelectAllFiles(masterCb) {
+  const cbs = document.querySelectorAll('.inbox-file-cb:not(:disabled)');
+  cbs.forEach(cb => {
+    cb.checked = masterCb.checked;
+  });
+  updateSelectAllState();
+}
+
+function updateSelectAllState() {
+  const cbs = document.querySelectorAll('.inbox-file-cb:not(:disabled)');
+  const checkedCbs = document.querySelectorAll('.inbox-file-cb:checked');
+  const masterCb = $('select-all-files');
   
-  const fileContainer = $('inbox-files');
-  if (fileContainer && fileContainer.children.length === 0) {
-    fileContainer.innerHTML = `
-      <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
-        No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
-      </div>`;
+  if (masterCb) {
+    if (cbs.length > 0 && checkedCbs.length === cbs.length) {
+      masterCb.checked = true;
+      masterCb.indeterminate = false;
+    } else if (checkedCbs.length > 0) {
+      masterCb.checked = false;
+      masterCb.indeterminate = true;
+    } else {
+      masterCb.checked = false;
+      masterCb.indeterminate = false;
+    }
   }
+  
+  const countEl = $('selected-count');
+  if (countEl) {
+    countEl.textContent = checkedCbs.length;
+  }
+  
+  const dlBtn = $('download-selected-btn');
+  if (dlBtn) {
+    dlBtn.disabled = checkedCbs.length === 0;
+  }
+}
+
+function downloadSelectedFiles() {
+  const checkedCbs = document.querySelectorAll('.inbox-file-cb:checked');
+  checkedCbs.forEach((cb, idx) => {
+    const fileId = cb.getAttribute('data-file-id');
+    const file = receivedFiles.get(fileId);
+    if (file && file.blob) {
+      setTimeout(() => {
+        saveBlob(file.blob, file.meta.name);
+      }, idx * 200);
+    }
+  });
+}
+
+function updateInboxBulkActionsVisibility() {
+  const fileContainer = $('inbox-files');
+  if (receivedFiles.size === 0) {
+    if (fileContainer && fileContainer.children.length === 0) {
+      fileContainer.innerHTML = `
+        <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
+          No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
+        </div>`;
+    }
+    const actionsBar = $('inbox-bulk-actions');
+    if (actionsBar) actionsBar.style.display = 'none';
+  } else {
+    const actionsBar = $('inbox-bulk-actions');
+    if (actionsBar) actionsBar.style.display = 'flex';
+  }
+  updateSelectAllState();
 }
 
 function preview1to1File() {
