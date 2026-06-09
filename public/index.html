@@ -186,15 +186,20 @@ function setSt(txt,cls='dy'){ const sl=$('stl'),tx=$('stx'); if(!sl||!tx)return;
 function setProg(r,lbl,spd,eta){ const pw=$('pw'); if(!pw)return; pw.style.display='block'; $('pf').style.width=(Math.min(r,1)*100).toFixed(1)+'%'; $('pct').textContent=Math.round(r*100)+'%'; if($('pl')&&lbl)$('pl').textContent=lbl; if($('spd')&&spd!==undefined)$('spd').textContent=spd?fmtS(spd):''; if($('eta')&&eta!==undefined)$('eta').textContent=eta?fmtE(eta):''; }
 function saveBlob(blob,name){ const url=URL.createObjectURL(blob); const a=Object.assign(document.createElement('a'),{href:url,download:name}); document.body.appendChild(a);a.click();document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(url),60000); }
 
-function showHome(){
+function showHome(forceHome=false){
   stopTimer();
+  if(forceHome){
+    try{history.replaceState({}, '', location.pathname);}catch(e){}
+  }
   const p=new URLSearchParams(location.search);
   const qc=p.get('code')?.toUpperCase().slice(0,6);
   const ri=p.get('relay');
   const ib=p.get('inbox')?.toUpperCase().slice(0,6);
-  if(ri) return startRelayRecv(ri);
-  if(qc&&/^[A-Z0-9]{6}$/.test(qc)) return startRecv(qc);
-  if(ib&&/^[A-Z0-9]{6}$/.test(ib)) return startInboxSender(ib);
+  if(!forceHome){
+    if(ri) return startRelayRecv(ri);
+    if(qc&&/^[A-Z0-9]{6}$/.test(qc)) return startRecv(qc);
+    if(ib&&/^[A-Z0-9]{6}$/.test(ib)) return startInboxSender(ib);
+  }
   
   const session = getActiveSessionType();
   const sessionBanner = session ? `
@@ -457,7 +462,7 @@ function showSendDone(file,mode,relayId){
       <div style="margin-bottom:1.25rem"><span class="mtg ${mode==='p2p'?'mp':'mr'}">${mode==='p2p'?'⚡ Direct P2P — never touched a server':'☁️ Via relay — deleted after download'}</span></div>
       ${relayId?`<div style="text-align:left;margin-bottom:1rem"><div class="slb">Relay link (expires 10 min)</div><div class="lr"><span class="lu">${ru}</span><button class="btn bg bsm" onclick="cpText('${ru}',this)">Copy</button></div></div>`:''}
       <button class="btn ba" onclick="showSend()">Send another</button>
-      <button class="btn bg mt1" onclick="showHome()">← Home</button>
+      <button class="btn bg mt1" onclick="showHome(true)">← Home</button>
     </div>`;
 }
 
@@ -465,7 +470,7 @@ function showRecv(){
   stopTimer();
   root().innerHTML=`
     <div class="card fade">
-      <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive a file</span><button class="btn bg bsm" onclick="showHome()">← Back</button></div>
+      <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive a file</span><button class="btn bg bsm" onclick="showHome(true)">← Back</button></div>
       <div class="slb">Enter the 6-character code from the sender</div>
       <input class="ci" id="ci" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryJoin()">
       <button class="btn ba" onclick="tryJoin()">Connect →</button>
@@ -478,7 +483,7 @@ function tryJoin(){ const c=($('ci')?.value||'').trim().toUpperCase(); if(c.leng
 function startRecv(code){
   root().innerHTML=`
     <div class="card fade">
-      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Connecting…</span><button class="btn bg bsm" onclick="showHome()">Cancel</button></div>
+      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Connecting…</span><button class="btn bg bsm" onclick="showHome(true)">Cancel</button></div>
       <div class="cb" style="margin-bottom:.85rem"><div><div class="cl">Room code</div><div class="cv">${code}</div></div></div>
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting to signal server…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
@@ -606,7 +611,7 @@ function runReceiver(code){
 function startRelayRecv(relayId){
   root().innerHTML=`
     <div class="card fade">
-      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Relay download</span><button class="btn bg bsm" onclick="showHome()">← Home</button></div>
+      <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Relay download</span><button class="btn bg bsm" onclick="showHome(true)">← Home</button></div>
       <div class="stl" id="stl"><span class="dot db pu"></span><span id="stx">Looking up file…</span></div>
       <div id="finfo" style="display:none">
         <div class="div"></div>
@@ -639,7 +644,7 @@ function showRecvDone(info,mode){
       <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${info.name||info.fileName}</strong> (${fmtB(info.size||info.fileSize)}) saved</p>
       <div style="margin-bottom:1.25rem"><span class="mtg ${mode==='p2p'?'mp':'mr'}">${mode==='p2p'?'⚡ Direct P2P — never touched a server':'☁️ Via relay — deleted from server'}</span></div>
       <button class="btn ba" onclick="showRecv()">Receive another</button>
-      <button class="btn bg mt1" onclick="showHome()">← Home</button>
+      <button class="btn bg mt1" onclick="showHome(true)">← Home</button>
     </div>`;
 }
 
@@ -663,7 +668,7 @@ function showInboxDashboard(code) {
       <div class="rsb" style="margin-bottom: 1rem">
         <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
         <div style="display:flex; gap:0.5rem">
-          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
           <button class="btn bg bsm" onclick="closeInbox()" style="border-color:var(--er); color:var(--er);">Stop Inbox</button>
         </div>
       </div>
@@ -1203,7 +1208,7 @@ function showInboxSenderProgressUI(file, code, index, count) {
       <div class="rsb" style="margin-bottom:1rem">
         <span class="bdg binf"><span class="dot db pu"></span> ${badgeText}</span>
         <div style="display:flex; gap:0.5rem">
-          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
           <button class="btn bg bsm" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er);">Disconnect</button>
         </div>
       </div>
@@ -1378,7 +1383,7 @@ function showInboxSendDone(file, code) {
       </div>
       
       <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button class="btn bg" onclick="showHome()" style="flex:1;">← Minimize</button>
+        <button class="btn bg" onclick="showHome(true)" style="flex:1;">← Minimize</button>
         <button class="btn bg" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er); width:auto; padding:0 1rem;">Disconnect</button>
       </div>
     </div>`;
@@ -1392,7 +1397,7 @@ function cleanupActiveInboxSender() {
 
 function cancelInboxSender(code) {
   cleanupActiveInboxSender();
-  showHome();
+  showHome(true);
 }
 
 function showSendDonePersistent1to1(file, code, dc, pc, ws) {
@@ -1417,7 +1422,7 @@ function showSendDonePersistent1to1(file, code, dc, pc, ws) {
       </div>
       
       <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button class="btn bg" onclick="showHome()" style="flex:1;">← Minimize</button>
+        <button class="btn bg" onclick="showHome(true)" style="flex:1;">← Minimize</button>
         <button class="btn bg" onclick="disconnect1to1Sender()" style="border-color:var(--er); color:var(--er); width:auto; padding:0 1rem;">Disconnect</button>
       </div>
     </div>`;
@@ -1505,7 +1510,7 @@ function disconnect1to1Sender() {
   if (active1to1Sender.ws) active1to1Sender.ws.close();
   if (active1to1Sender.pc) active1to1Sender.pc.close();
   active1to1Sender = { code: null, dc: null, pc: null, ws: null };
-  showHome();
+  showHome(true);
 }
 
 function showRecvDonePersistent1to1(lastMeta, code, dc, pc, ws) {
@@ -1519,7 +1524,7 @@ function showRecvDonePersistent1to1(lastMeta, code, dc, pc, ws) {
       <div class="rsb" style="margin-bottom: 1rem">
         <span class="bdg bok"><span class="dot dg pu"></span> Connected to Sender</span>
         <div style="display:flex; gap:0.5rem">
-          <button class="btn bg bsm" onclick="showHome()">← Minimize</button>
+          <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
           <button class="btn bg bsm" onclick="disconnect1to1Receiver()" style="border-color:var(--er); color:var(--er);">Disconnect</button>
         </div>
       </div>
@@ -1650,7 +1655,7 @@ function disconnect1to1Receiver() {
   if (active1to1Receiver.ws) active1to1Receiver.ws.close();
   if (active1to1Receiver.pc) active1to1Receiver.pc.close();
   active1to1Receiver = { code: null, dc: null, pc: null, ws: null, chunks: [] };
-  showHome();
+  showHome(true);
 }
 
 function showPrepareTransfer(files, type, code) {
@@ -1658,7 +1663,7 @@ function showPrepareTransfer(files, type, code) {
   const savedNickname = safeStorage.get('fs_nickname') || '';
   const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
   
-  let backClick = 'showHome()';
+  let backClick = 'showHome(true)';
   if (type === '1to1') backClick = 'showSend()';
   else if (type === 'inbox') backClick = `startInboxSender('${code}')`;
   else if (type === '1to1persistent') {
@@ -1666,7 +1671,7 @@ function showPrepareTransfer(files, type, code) {
     if (s && s.type === '1to1sender') {
       backClick = `showSendDonePersistent1to1(active1to1Sender.lastFile || { name: 'File', size: 0 }, '${s.code}', active1to1Sender.dc, active1to1Sender.pc, active1to1Sender.ws)`;
     } else {
-      backClick = 'showHome()';
+      backClick = 'showHome(true)';
     }
   }
   
@@ -1732,7 +1737,7 @@ function removePreparedFile(idx) {
     if (window.prepType === '1to1') showSend();
     else if (window.prepType === 'inbox') startInboxSender(window.prepCode);
     else if (window.prepType === '1to1persistent') resumeActiveSession();
-    else showHome();
+    else showHome(true);
   } else {
     showPrepareTransfer(window.preparedFiles, window.prepType, window.prepCode);
   }
@@ -1774,7 +1779,7 @@ function showSendToInbox(){
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
         <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send to Inbox</span>
-        <button class="btn bg bsm" onclick="showHome()">← Back</button>
+        <button class="btn bg bsm" onclick="showHome(true)">← Back</button>
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
       <input class="ci" id="sender-nickname" placeholder="NICKNAME (OPTIONAL)" value="${savedNickname}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())">
