@@ -697,11 +697,14 @@ function showInboxDashboard(code) {
         </label>
       </div>
 
-      <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b);">
-        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer; user-select:none;">
+      <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b); flex-wrap:wrap; gap:0.5rem;">
+        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer; user-select:none; margin-right:auto;">
           <input type="checkbox" id="select-all-files" onchange="toggleSelectAllFiles(this)" style="accent-color:var(--a); cursor:pointer;"> Select All
         </label>
-        <button class="btn ba bsm" id="download-selected-btn" onclick="downloadSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto;">⬇️ Download Selected (<span id="selected-count">0</span>)</button>
+        <div style="display:flex; gap:0.4rem;">
+          <button class="btn ba bsm" id="download-selected-btn" onclick="downloadSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0;">⬇️ Download Selected (<span id="selected-count">0</span>)</button>
+          <button class="btn bg bsm" id="zip-selected-btn" onclick="zipSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0; border-color:var(--a); color:var(--a);">📦 Zip Selected</button>
+        </div>
       </div>
       
       <div id="inbox-files" style="display:flex; flex-direction:column; gap:0.75rem; max-height:280px; overflow-y:auto; padding-right:0.25rem;">
@@ -949,7 +952,6 @@ function setupInboxPeer(code, senderId) {
             file.status = 'completed';
             file.ratio = 1;
             updateInboxFileProgress(fileId, 1, 'Completed', 0, 0);
-            saveBlob(blob, file.meta.name);
             file.chunks = []; // Clear chunks memory
           }
           peer.activeFileId = null;
@@ -1041,7 +1043,7 @@ function renderInboxFileEntry(fileId) {
     </div>
     
     <div id="accept-row-${file.elId}" style="display:flex; gap:0.5rem; margin-top:0.25rem;">
-      <button class="btn ba bsm" onclick="acceptInboxFile('${fileId}')" style="flex:1;">⬇️ Accept &amp; Download</button>
+      <button class="btn ba bsm" onclick="acceptInboxFile('${fileId}')" style="flex:1;">⬇️ Accept</button>
       <button class="btn bg bsm" onclick="rejectInboxFile('${fileId}')" style="width:auto; padding:0 0.75rem;">✕</button>
     </div>
     
@@ -1963,6 +1965,11 @@ function updateSelectAllState() {
   if (dlBtn) {
     dlBtn.disabled = checkedCbs.length === 0;
   }
+  
+  const zipBtn = $('zip-selected-btn');
+  if (zipBtn) {
+    zipBtn.disabled = checkedCbs.length === 0;
+  }
 }
 
 function downloadSelectedFiles() {
@@ -1976,6 +1983,139 @@ function downloadSelectedFiles() {
       }, idx * 200);
     }
   });
+}
+
+async function zipSelectedFiles() {
+  const checkedCbs = document.querySelectorAll('.inbox-file-cb:checked');
+  const filesToZip = [];
+  for (const cb of checkedCbs) {
+    const fileId = cb.getAttribute('data-file-id');
+    const file = receivedFiles.get(fileId);
+    if (file && file.blob) {
+      filesToZip.push({ name: file.meta.name, blob: file.blob });
+    }
+  }
+  if (filesToZip.length === 0) return;
+
+  const zipBtn = $('zip-selected-btn');
+  const originalText = zipBtn.innerHTML;
+  zipBtn.disabled = true;
+  zipBtn.textContent = '🤐 Zipping...';
+
+  try {
+    const zipBlob = await generateZipBlob(filesToZip);
+    const dateString = new Date().toISOString().slice(0, 10);
+    saveBlob(zipBlob, `fileshare_inbox_${dateString}.zip`);
+  } catch (err) {
+    logD(`Error zipping files: ${err.message}`);
+  } finally {
+    zipBtn.disabled = false;
+    zipBtn.innerHTML = originalText;
+  }
+}
+
+async function generateZipBlob(files) {
+  const crcTable = window.crcTable || (window.crcTable = (() => {
+    const table = [];
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[n] = c;
+    }
+    return table;
+  })());
+
+  function getCrc32(arr) {
+    let crc = 0 ^ (-1);
+    for (let i = 0; i < arr.length; i++) {
+      crc = (crc >>> 8) ^ crcTable[(crc ^ arr[i]) & 0xff];
+    }
+    return (crc ^ (-1)) >>> 0;
+  }
+
+  const parts = [];
+  const cdParts = [];
+  let currentOffset = 0;
+
+  const d = new Date();
+  const dosTime = ((d.getHours() & 0x1f) << 11) | ((d.getMinutes() & 0x3f) << 5) | ((d.getSeconds() >> 1) & 0x1f);
+  const dosDate = (((d.getFullYear() - 1980) & 0x7f) << 9) | (((d.getMonth() + 1) & 0x0f) << 5) | (d.getDate() & 0x1f);
+
+  for (const file of files) {
+    const nameBytes = new TextEncoder().encode(file.name);
+    const ab = await file.blob.arrayBuffer();
+    const dataBytes = new Uint8Array(ab);
+    const crc = getCrc32(dataBytes);
+    const size = dataBytes.length;
+
+    const lfh = new Uint8Array(30 + nameBytes.length);
+    const view = new DataView(lfh.buffer);
+
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(4, 10, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true);
+    view.setUint16(10, dosTime, true);
+    view.setUint16(12, dosDate, true);
+    view.setUint32(14, crc, true);
+    view.setUint32(18, size, true);
+    view.setUint32(22, size, true);
+    view.setUint16(26, nameBytes.length, true);
+    view.setUint16(28, 0, true);
+    lfh.set(nameBytes, 30);
+
+    parts.push(lfh);
+    parts.push(dataBytes);
+
+    const cdh = new Uint8Array(46 + nameBytes.length);
+    const cdView = new DataView(cdh.buffer);
+
+    cdView.setUint32(0, 0x02014b50, true);
+    cdView.setUint16(4, 20, true);
+    cdView.setUint16(6, 10, true);
+    cdView.setUint16(8, 0, true);
+    cdView.setUint16(10, 0, true);
+    cdView.setUint16(12, dosTime, true);
+    cdView.setUint16(14, dosDate, true);
+    cdView.setUint32(16, crc, true);
+    cdView.setUint32(20, size, true);
+    cdView.setUint32(24, size, true);
+    cdView.setUint16(28, nameBytes.length, true);
+    cdView.setUint16(30, 0, true);
+    cdView.setUint16(32, 0, true);
+    cdView.setUint16(34, 0, true);
+    cdView.setUint16(36, 0, true);
+    cdView.setUint32(38, 0, true);
+    cdView.setUint32(42, currentOffset, true);
+    cdh.set(nameBytes, 46);
+
+    cdParts.push(cdh);
+
+    currentOffset += lfh.length + size;
+  }
+
+  const cdOffset = currentOffset;
+  let cdSize = 0;
+  for (const part of cdParts) {
+    cdSize += part.length;
+  }
+
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(4, 0, true);
+  eocdView.setUint16(6, 0, true);
+  eocdView.setUint16(8, files.length, true);
+  eocdView.setUint16(10, files.length, true);
+  eocdView.setUint32(12, cdSize, true);
+  eocdView.setUint32(16, cdOffset, true);
+  eocdView.setUint16(20, 0, true);
+
+  const allParts = [...parts, ...cdParts, eocd];
+  return new Blob(allParts, { type: 'application/zip' });
 }
 
 function updateInboxBulkActionsVisibility() {
