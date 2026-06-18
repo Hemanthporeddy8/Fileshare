@@ -230,7 +230,11 @@ function showHome(forceHome=false){
         </button>
         <button class="mb" onclick="showCreateInbox()">
           <span class="btn-qmark" data-tooltip="Host a file drop dashboard. Generates a QR code and link so multiple people can stream files directly to your device." onclick="event.stopPropagation()">?</span>
-          <div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a drop dashboard</div>
+          <div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a temporary drop dashboard</div>
+        </button>
+        <button class="mb" onclick="showPrintShopAuth()" style="grid-column: span 2;">
+          <span class="btn-qmark" data-tooltip="Claim a permanent room code (e.g. PRINT1) for your print shop. Print the QR flyer for your wall so customers can send print jobs instantly." onclick="event.stopPropagation()">?</span>
+          <div class="ic">🖨️</div><div class="lb">Print Shop Mode</div><div class="sb">Claim a permanent QR &amp; dashboard</div>
         </button>
       </div>
     </div>
@@ -661,8 +665,21 @@ function showCreateInbox() {
   showInboxDashboard(code);
 }
 
-function showInboxDashboard(code) {
+function showInboxDashboard(code, token = null) {
   stopTimer();
+
+  if (token) {
+    window.inboxToken = token;
+    localStorage.setItem('fs_auth_token', token);
+    localStorage.setItem('fs_auth_code', code);
+  } else {
+    window.inboxToken = localStorage.getItem('fs_auth_token') || null;
+  }
+
+  const isPermanent = !!window.inboxToken;
+  const stopButtonText = isPermanent ? 'Log Out' : 'Stop Inbox';
+  const stopButtonAction = isPermanent ? 'logoutPrintShop()' : 'closeInbox()';
+
   const url = `${location.origin}${location.pathname}?inbox=${code}`;
   root().innerHTML = `
     <div class="card fade" style="max-width: 600px;">
@@ -670,7 +687,7 @@ function showInboxDashboard(code) {
         <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
         <div style="display:flex; gap:0.5rem">
           <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
-          <button class="btn bg bsm" onclick="closeInbox()" style="border-color:var(--er); color:var(--er);">Stop Inbox</button>
+          <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
         </div>
       </div>
       <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
@@ -686,6 +703,9 @@ function showInboxDashboard(code) {
           </div>
           <div class="slb">Share this drop link</div>
           <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
+          ${isPermanent ? `
+          <button class="btn ba bsm" onclick="printQRFlyer('${code}')" style="width:100%; font-size:0.75rem; background:var(--okd); border-color:var(--ok); color:var(--ok); margin-top:0.75rem;">🖨️ Print QR Flyer for Wall</button>
+          ` : ''}
         </div>
         <div style="text-align:center;flex-shrink:0;margin:0 auto"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to drop files</div></div>
       </div>
@@ -800,7 +820,8 @@ function showInboxDashboard(code) {
 function runInboxReceiver(code) {
   startTimer();
   logD('Connecting to signaling server as Inbox...');
-  inboxWs = new WebSocket(`${SIG}?code=${code}&role=inbox`);
+  const tokenQuery = window.inboxToken ? `&token=${window.inboxToken}` : '';
+  inboxWs = new WebSocket(`${SIG}?code=${code}&role=inbox${tokenQuery}`);
   inboxWs._code = code;
   
   inboxWs.onopen = () => {
@@ -1026,6 +1047,15 @@ function renderInboxFileEntry(fileId) {
   if (file.meta.batchCount && file.meta.batchCount > 1) {
     batchInfo = ` · [File ${file.meta.batchIndex + 1} of ${file.meta.batchCount}]`;
   }
+
+  let printInfo = '';
+  if (file.meta.printSettings) {
+    const ps = file.meta.printSettings;
+    const colorLabel = ps.color === 'color' ? '🎨 Color' : '⚫ B&W';
+    const sidesLabel = ps.sides === 'double' ? '↕️ Double-sided' : '📄 Single-sided';
+    const copiesLabel = ps.copies > 1 ? `${ps.copies} Copies` : '1 Copy';
+    printInfo = `<div style="font-size:0.72rem; font-weight:600; color:var(--a); background:rgba(255,255,255,0.03); border:1px dashed var(--b); border-radius:4px; padding:0.2rem 0.5rem; margin-top:0.35rem; display:inline-flex; gap:0.5rem; align-items:center;">🖨️ ${copiesLabel} · ${colorLabel} · ${sidesLabel}</div>`;
+  }
   
   entry.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
@@ -1037,6 +1067,7 @@ function renderInboxFileEntry(fileId) {
           <div style="font-size:0.7rem; color:var(--m); margin-top:0.1rem;">
             ${formattedSize} · From <span style="font-family:'IBM Plex Mono',monospace; color:var(--a);">${displaySender}</span>${batchInfo}
           </div>
+          ${printInfo}
         </div>
       </div>
       <div id="badge-${file.elId}" class="bdg bwn" style="font-size:0.65rem; padding:0.15rem 0.5rem; flex-shrink:0;">Waiting Accept</div>
@@ -1047,8 +1078,9 @@ function renderInboxFileEntry(fileId) {
       <button class="btn bg bsm" onclick="rejectInboxFile('${fileId}')" style="width:auto; padding:0 0.75rem;">✕</button>
     </div>
     
-    <div id="completed-row-${file.elId}" style="display:none; gap:0.5rem; margin-top:0.25rem;">
-      <button class="btn ba bsm" id="preview-btn-${file.elId}" onclick="previewInboxFile('${fileId}')" style="flex:1; display:none;">👁️ Preview</button>
+    <div id="completed-row-${file.elId}" style="display:none; gap:0.5rem; margin-top:0.25rem; flex-wrap:wrap;">
+      <button class="btn ba bsm" id="preview-btn-${file.elId}" onclick="previewInboxFile('${fileId}')" style="flex:1.5; display:none;">👁️ Preview</button>
+      <button class="btn bg bsm" onclick="printInboxFile('${fileId}')" style="flex:1; border-color:var(--a); color:var(--a);">🖨️ Print</button>
       <button class="btn bg bsm" onclick="downloadInboxFile('${fileId}')" style="flex:1;">⬇️ Download</button>
       <button class="btn bg bsm" onclick="deleteInboxFile('${fileId}', '${file.elId}')" style="border-color:var(--er); color:var(--er); flex:1;">🗑️ Delete</button>
     </div>
@@ -1414,7 +1446,8 @@ function sendInboxFileDirectly(file, batchId, index, count) {
     nickname: safeStorage.get('fs_nickname') || null,
     batchId: bId,
     batchIndex: idx,
-    batchCount: cnt
+    batchCount: cnt,
+    printSettings: window.printSettings || null
   }));
   
   dc.onmessage = e => {
@@ -1792,6 +1825,39 @@ function showPrepareTransfer(files, type, code) {
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
       <input class="ci" id="prep-nickname" placeholder="NICKNAME (OPTIONAL)" value="${esc(savedNickname)}" style="font-size:1.1rem;letter-spacing:0.05em;padding:0.6rem;text-transform:uppercase;margin:0.4rem 0 1.25rem;" autocomplete="off" spellcheck="false" maxlength="15" oninput="this.value=this.value.toUpperCase(); safeStorage.set('fs_nickname',this.value.trim())" onkeydown="if(event.key==='Enter')startBulkTransfer()">
       
+      ${type === 'inbox' ? `
+      <div style="background:rgba(255,255,255,0.02); border:1px solid var(--b); border-radius:var(--r); padding:0.8rem; margin-bottom:1.25rem; text-align:left;">
+        <div class="slb" style="margin-bottom:0.6rem; color:var(--a); font-weight:600;">Print Specifications</div>
+        <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+          <div style="flex:1; min-width:85px;">
+            <div class="slb" style="margin-bottom:0.25rem; font-size:0.6rem;">Copies</div>
+            <select id="print-copies" class="ci" style="font-size:0.85rem; letter-spacing:0; padding:0.35rem; margin:0; border-radius:6px; cursor:pointer; text-align:left;">
+              <option value="1">1 Copy</option>
+              <option value="2">2 Copies</option>
+              <option value="3">3 Copies</option>
+              <option value="4">4 Copies</option>
+              <option value="5">5 Copies</option>
+              <option value="10">10 Copies</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:85px;">
+            <div class="slb" style="margin-bottom:0.25rem; font-size:0.6rem;">Color Mode</div>
+            <select id="print-color" class="ci" style="font-size:0.85rem; letter-spacing:0; padding:0.35rem; margin:0; border-radius:6px; cursor:pointer; text-align:left;">
+              <option value="bw">Black &amp; White</option>
+              <option value="color">Color</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:85px;">
+            <div class="slb" style="margin-bottom:0.25rem; font-size:0.6rem;">Sides</div>
+            <select id="print-sides" class="ci" style="font-size:0.85rem; letter-spacing:0; padding:0.35rem; margin:0; border-radius:6px; cursor:pointer; text-align:left;">
+              <option value="single">Single-sided</option>
+              <option value="double">Double-sided</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      ` : ''}
+      
       <button class="btn ba" onclick="startBulkTransfer()">
         ${type === 'inbox' ? '📤 Send to Inbox' : '⚡ Connect & Send'}
       </button>
@@ -1832,6 +1898,15 @@ function startBulkTransfer() {
   const code = window.prepCode;
   
   if (!files || files.length === 0) return;
+
+  if (type === 'inbox') {
+    const copies = $('print-copies')?.value || '1';
+    const color = $('print-color')?.value || 'bw';
+    const sides = $('print-sides')?.value || 'single';
+    window.printSettings = { copies, color, sides };
+  } else {
+    window.printSettings = null;
+  }
   
   const batchId = 'b_' + genC();
   window.sendQueue = files.map((f, idx) => ({
@@ -2190,6 +2265,367 @@ function showPreviewModal(blob, name) {
     modal.remove();
     URL.revokeObjectURL(url);
   };
+}
+
+function showPrintShopAuth() {
+  stopTimer();
+  const token = localStorage.getItem('fs_auth_token');
+  const savedCode = localStorage.getItem('fs_auth_code');
+  if (token && savedCode) {
+    showInboxDashboard(savedCode, token);
+    return;
+  }
+  showAuthPage();
+}
+
+function showAuthPage(isRegister = false) {
+  stopTimer();
+  root().innerHTML = `
+    <div class="card fade" style="max-width: 420px;">
+      <div class="rsb" style="margin-bottom: 1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700">Print Shop Owner</span>
+        <button class="btn bg bsm" onclick="showHome()">← Back</button>
+      </div>
+      
+      <div style="display:flex; margin-bottom:1.5rem; border-bottom:1px solid var(--b);">
+        <button id="tab-login" class="btn" style="flex:1; border-radius:0; background:none; border-bottom:2px solid ${!isRegister ? 'var(--a)' : 'transparent'}; color:${!isRegister ? 'var(--t)' : 'var(--m2)'}; padding:0.75rem; outline:none;" onclick="toggleAuthTab(false)">Login</button>
+        <button id="tab-register" class="btn" style="flex:1; border-radius:0; background:none; border-bottom:2px solid ${isRegister ? 'var(--a)' : 'transparent'}; color:${isRegister ? 'var(--t)' : 'var(--m2)'}; padding:0.75rem; outline:none;" onclick="toggleAuthTab(true)">Sign Up</button>
+      </div>
+
+      <div id="auth-error-msg" style="display:none; color:var(--er); font-size:0.75rem; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2); padding:0.6rem; border-radius:var(--r); margin-bottom:1rem; text-align:center;"></div>
+
+      <form id="auth-form" onsubmit="handleAuthSubmit(event, ${isRegister})">
+        <div style="margin-bottom: 1rem; text-align:left;">
+          <div class="slb" style="margin-bottom:0.3rem">Email Address</div>
+          <input type="email" id="auth-email" required class="ci" placeholder="EMAIL" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="email">
+        </div>
+        
+        ${isRegister ? `
+        <div style="margin-bottom: 1rem; text-align:left;">
+          <div class="slb" style="margin-bottom:0.3rem">Desired Permanent Code (6 letters/numbers)</div>
+          <input type="text" id="auth-code" required class="ci" placeholder="E.G. PRINT1" maxlength="6" minlength="6" style="font-size:0.95rem; letter-spacing:0.1em; padding:0.65rem; text-align:left; margin:0;" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+        </div>
+        ` : ''}
+
+        <div style="margin-bottom: 1.5rem; text-align:left;">
+          <div class="slb" style="margin-bottom:0.3rem">Password</div>
+          <input type="password" id="auth-password" required class="ci" placeholder="PASSWORD" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="current-password">
+        </div>
+
+        <button type="submit" id="auth-submit-btn" class="btn ba" style="font-weight:600;">
+          ${isRegister ? 'Create Account &amp; Claim Code' : 'Log In to Dashboard'}
+        </button>
+      </form>
+    </div>
+  `;
+}
+
+function toggleAuthTab(isRegister) {
+  showAuthPage(isRegister);
+}
+
+async function handleAuthSubmit(e, isRegister) {
+  e.preventDefault();
+  const errorEl = $('auth-error-msg');
+  const submitBtn = $('auth-submit-btn');
+  if (errorEl) errorEl.style.display = 'none';
+
+  const email = $('auth-email').value.trim();
+  const password = $('auth-password').value;
+  const payload = { email, password };
+
+  if (isRegister) {
+    const code = $('auth-code').value.trim().toUpperCase();
+    if (code.length !== 6) {
+      showAuthError('Room code must be exactly 6 characters.');
+      return;
+    }
+    payload.code = code;
+  }
+
+  submitBtn.disabled = true;
+  const originalText = submitBtn.innerHTML;
+  submitBtn.textContent = 'Processing...';
+
+  try {
+    const endpoint = isRegister ? '/api/auth/signup' : '/api/auth/login';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthError(data.error || 'Authentication failed.');
+      return;
+    }
+
+    if (isRegister) {
+      const loginRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const loginData = await loginRes.json();
+      if (!loginRes.ok) {
+        showAuthError('Signup succeeded, but automatic login failed. Please log in manually.');
+        return;
+      }
+      localStorage.setItem('fs_auth_token', loginData.token);
+      localStorage.setItem('fs_auth_code', loginData.code);
+      showInboxDashboard(loginData.code, loginData.token);
+    } else {
+      localStorage.setItem('fs_auth_token', data.token);
+      localStorage.setItem('fs_auth_code', data.code);
+      showInboxDashboard(data.code, data.token);
+    }
+  } catch (err) {
+    console.error(err);
+    showAuthError('Failed to connect to the server. Please check your connection.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalText;
+  }
+}
+
+function showAuthError(msg) {
+  const errorEl = $('auth-error-msg');
+  if (errorEl) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+}
+
+function logoutPrintShop() {
+  localStorage.removeItem('fs_auth_token');
+  localStorage.removeItem('fs_auth_code');
+  window.inboxToken = null;
+  closeInbox();
+}
+
+function printInboxFile(fileId) {
+  const file = receivedFiles.get(fileId);
+  if (!file || !file.blob) return;
+
+  const mime = file.meta.mimeType || '';
+  const url = URL.createObjectURL(file.blob);
+
+  if (mime.startsWith('image/') || mime.startsWith('text/') || mime === 'application/pdf') {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          window.open(url, '_blank').print();
+        }
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }, 500);
+    };
+
+    if (mime === 'application/pdf' || mime.startsWith('text/')) {
+      iframe.src = url;
+    } else {
+      iframe.srcdoc = `
+        <html>
+          <body style="margin:0; display:flex; align-items:center; justify-content:center;">
+            <img src="${url}" style="max-width:100%; max-height:100%; object-fit:contain;" />
+          </body>
+        </html>
+      `;
+    }
+  } else {
+    const win = window.open(url, '_blank');
+    if (win) {
+      win.onload = () => {
+        win.print();
+      };
+    }
+  }
+}
+
+function printQRFlyer(code) {
+  const url = `${location.origin}${location.pathname}?inbox=${code}`;
+  const tempDiv = document.createElement('div');
+  new QRCode(tempDiv, {
+    text: url,
+    width: 350,
+    height: 350,
+    colorDark : "#000000",
+    colorLight : "#ffffff",
+    correctLevel : QRCode.CorrectLevel.H
+  });
+
+  setTimeout(() => {
+    const qrImg = tempDiv.querySelector('img')?.src || tempDiv.querySelector('canvas')?.toDataURL();
+    if (!qrImg) {
+      alert('Failed to generate QR Code. Please try again.');
+      return;
+    }
+
+    const flyWin = window.open('', '_blank');
+    if (!flyWin) {
+      alert('Popup blocked. Please allow popups to print flyer.');
+      return;
+    }
+
+    flyWin.document.write(\`
+      <html>
+        <head>
+          <title>Print Shop QR Flyer - \${code}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Syne:wght@700;800&display=swap');
+            body {
+              font-family: 'Outfit', sans-serif;
+              margin: 0;
+              padding: 3rem;
+              text-align: center;
+              color: #0d0d1a;
+              background: #ffffff;
+            }
+            .container {
+              border: 3px double #0d0d1a;
+              border-radius: 20px;
+              padding: 2.5rem;
+              max-width: 600px;
+              margin: 0 auto;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            }
+            h1 {
+              font-family: 'Syne', sans-serif;
+              font-size: 2.6rem;
+              font-weight: 800;
+              margin-top: 0;
+              margin-bottom: 0.5rem;
+              text-transform: uppercase;
+              letter-spacing: -0.5px;
+            }
+            p.sub {
+              font-size: 1.1rem;
+              color: #555566;
+              margin-bottom: 2rem;
+            }
+            .qr-box {
+              margin: 2rem 0;
+              display: inline-block;
+              padding: 1rem;
+              border: 1px solid #e0e0e8;
+              border-radius: 12px;
+              background: #fff;
+            }
+            .qr-box img {
+              display: block;
+              width: 320px;
+              height: 320px;
+            }
+            .code-label {
+              font-size: 0.85rem;
+              text-transform: uppercase;
+              letter-spacing: 0.1em;
+              color: #777788;
+              margin-bottom: 0.2rem;
+            }
+            .code-val {
+              font-family: 'IBM Plex Mono', monospace;
+              font-size: 2.2rem;
+              font-weight: 800;
+              letter-spacing: 0.2em;
+              color: #0d0d1a;
+              background: #f4f4f8;
+              display: inline-block;
+              padding: 0.3rem 1rem 0.3rem 1.2rem;
+              border-radius: 8px;
+              margin-bottom: 2rem;
+            }
+            .instructions {
+              text-align: left;
+              max-width: 480px;
+              margin: 0 auto;
+              background: #f8f8fb;
+              border-radius: 12px;
+              padding: 1.25rem 1.5rem;
+            }
+            .step {
+              display: flex;
+              gap: 0.75rem;
+              margin-bottom: 0.8rem;
+              font-size: 0.95rem;
+              color: #333344;
+            }
+            .step:last-child {
+              margin-bottom: 0;
+            }
+            .num {
+              background: #0d0d1a;
+              color: #fff;
+              border-radius: 50%;
+              width: 22px;
+              height: 22px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 0.75rem;
+              font-weight: 600;
+              flex-shrink: 0;
+            }
+            @media print {
+              body { padding: 0; }
+              .container { border: none; box-shadow: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Scan to Print</h1>
+            <p class="sub">No phone number needed · Secure &amp; Private</p>
+            
+            <div class="qr-box">
+              <img src="\${qrImg}" />
+            </div>
+            
+            <div class="code-label">Or visit the site &amp; enter code</div>
+            <div class="code-val">\${code}</div>
+            
+            <div class="instructions">
+              <div class="step">
+                <div class="num">1</div>
+                <div>Scan this QR code with your phone camera or GPay/Paytm.</div>
+              </div>
+              <div class="step">
+                <div class="num">2</div>
+                <div>Select the files you want to print.</div>
+              </div>
+              <div class="step">
+                <div class="num">3</div>
+                <div>Choose your copies, B&amp;W/Color settings, and send!</div>
+              </div>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            };
+          <\/script>
+        </body>
+      </html>
+    \`);
+    flyWin.document.close();
+  }, 300);
 }
 
 showHome();

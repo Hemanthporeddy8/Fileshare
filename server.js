@@ -7,12 +7,17 @@ const crypto     = require('crypto');
 const fs         = require('fs');
 const path       = require('path');
 const os         = require('os');
+const { MongoClient } = require('mongodb');
+const bcrypt     = require('bcryptjs');
+const jwt        = require('jsonwebtoken');
 
 const PORT        = parseInt(process.env.PORT || '3000', 10);
 const UPLOADS_DIR = path.join(os.tmpdir(), 'fileshare_relay');
 const FILE_TTL    = 10 * 60 * 1000;
 const ROOM_TTL    = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_RELAY   = parseInt(process.env.MAX_RELAY_MB || '500', 10) * 1024 * 1024;
+const MONGODB_URI = process.env.MONGODB_URI;
+const JWT_SECRET  = process.env.JWT_SECRET || 'fileshare-jwt-default-secret-key-999';
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
@@ -21,6 +26,31 @@ const fileStore = new Map();
 
 const app  = express();
 const http = createServer(app);
+
+// JSON body parser and global CORS setup
+app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
+// Database connection
+let dbUsersCollection = null;
+if (MONGODB_URI) {
+  const client = new MongoClient(MONGODB_URI);
+  client.connect()
+    .then(() => {
+      console.log('Connected to MongoDB');
+      const database = client.db('fileshare');
+      dbUsersCollection = database.collection('users');
+    })
+    .catch(err => console.error('MongoDB connection error:', err));
+} else {
+  console.warn('WARNING: MONGODB_URI is not set. Permanent rooms cannot be registered.');
+}
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -41,6 +71,74 @@ app.get('/api/relay/download/:id', (req, res) => {
   res.status(501).json({ error: 'Relay is disabled.' });
 });
 
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    if (!dbUsersCollection) {
+      return res.status(503).json({ error: 'Database is not connected.' });
+    }
+    const { email, password, code } = req.body;
+    if (!email || !password || !code) {
+      return res.status(400).json({ error: 'Email, password, and room code are required.' });
+    }
+    const cleanCode = code.trim().toUpperCase().slice(0, 6);
+    if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
+      return res.status(400).json({ error: 'Room code must be exactly 6 alphanumeric characters.' });
+    }
+
+    const existingCode = await dbUsersCollection.findOne({ code: cleanCode });
+    if (existingCode) {
+      return res.status(400).json({ error: 'This room code is already taken. Please choose another.' });
+    }
+    const existingEmail = await dbUsersCollection.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({ error: 'This email is already registered.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await dbUsersCollection.insertOne({
+      email: email.toLowerCase(),
+      passwordHash,
+      code: cleanCode,
+      createdAt: new Date(),
+      transfersCount: 0,
+      isPremium: false
+    });
+
+    res.json({ ok: true, code: cleanCode });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ error: 'Internal server error during registration.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    if (!dbUsersCollection) {
+      return res.status(503).json({ error: 'Database is not connected.' });
+    }
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const user = await dbUsersCollection.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const token = jwt.sign({ code: user.code, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ ok: true, token, code: user.code });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error during login.' });
+  }
+});
+
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // WebSocket signaling
@@ -54,7 +152,7 @@ http.on('upgrade', (req, socket, head) => {
   } catch { socket.destroy(); }
 });
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   let url, code, role;
   try {
     url  = new URL(req.url, 'http://x');
@@ -64,6 +162,30 @@ wss.on('connection', (ws, req) => {
 
   if (!code || !/^[A-Z0-9]{6}$/.test(code) || !['sender','receiver','inbox'].includes(role)) {
     ws.close(1008, 'Bad params'); return;
+  }
+
+  // Auth Check for Permanent Room (if DB is connected and client role is 'inbox')
+  if (role === 'inbox' && dbUsersCollection) {
+    try {
+      const user = await dbUsersCollection.findOne({ code });
+      if (user) {
+        const token = url.searchParams.get('token');
+        if (!token) {
+          ws.close(4001, 'Authorization token required'); return;
+        }
+        try {
+          const decoded = jwt.verify(token, JWT_SECRET);
+          if (decoded.code !== code) {
+            ws.close(4003, 'Forbidden'); return;
+          }
+        } catch (err) {
+          ws.close(4003, 'Unauthorized'); return;
+        }
+      }
+    } catch (dbErr) {
+      console.error('DB Auth Error:', dbErr);
+      ws.close(1011, 'Database Auth Error'); return;
+    }
   }
 
   let room = rooms.get(code);
