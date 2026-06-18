@@ -714,11 +714,16 @@ function showInboxDashboard(code, token = null) {
         <div style="text-align:center;flex-shrink:0;margin:0 auto"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to drop files</div></div>
       </div>
       
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem; flex-wrap:wrap; gap:0.5rem;">
         <div style="font-size: 0.8rem; color: var(--m); font-weight: 500;">Received Files</div>
-        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
-          <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
-        </label>
+        <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
+          <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
+            <input type="checkbox" id="always-awake" onchange="handleAlwaysAwakeChange(this)" style="accent-color:var(--a);"> ☕ Keep PC Awake
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
+            <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
+          </label>
+        </div>
       </div>
 
       <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b); flex-wrap:wrap; gap:0.5rem;">
@@ -1252,6 +1257,7 @@ function cleanupInboxPeer(senderId) {
 }
 
 function closeInbox() {
+  releaseWakeLock();
   if (inboxWs) {
     const ws = inboxWs;
     inboxWs = null;
@@ -1264,6 +1270,46 @@ function closeInbox() {
   receivedFiles.clear();
   showHome();
 }
+
+let wakeLock = null;
+async function handleAlwaysAwakeChange(cb) {
+  if (cb.checked) {
+    await acquireWakeLock();
+  } else {
+    releaseWakeLock();
+  }
+}
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator)) {
+    logD('Screen Wake Lock is not supported in this browser.');
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    logD('Screen Wake Lock active. PC will stay awake.');
+    wakeLock.addEventListener('release', () => {
+      logD('Screen Wake Lock released.');
+    });
+  } catch (err) {
+    logD(`Wake Lock error: ${err.message}`);
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock !== null) {
+    wakeLock.release();
+    wakeLock = null;
+    logD('Screen Wake Lock disabled.');
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  const cb = $('always-awake');
+  if (cb && cb.checked && document.visibilityState === 'visible') {
+    await acquireWakeLock();
+  }
+});
 
 function startInboxSender(code) {
   stopTimer();
