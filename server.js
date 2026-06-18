@@ -80,6 +80,9 @@ app.post('/api/auth/signup', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long, contain at least one uppercase letter, and at least one symbol.' });
+    }
     const existingEmail = await dbUsersCollection.findOne({ email: email.toLowerCase() });
     if (existingEmail) {
       return res.status(400).json({ error: 'This email is already registered.' });
