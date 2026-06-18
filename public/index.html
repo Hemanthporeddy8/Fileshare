@@ -2482,10 +2482,10 @@ function printQRFlyer(code) {
       return;
     }
 
-    flyWin.document.write(\`
+    flyWin.document.write(`
       <html>
         <head>
-          <title>Print Shop QR Flyer - \${code}</title>
+          <title>Print Shop QR Flyer - ${code}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Syne:wght@700;800&display=swap');
             body {
@@ -2590,14 +2590,14 @@ function printQRFlyer(code) {
         <body>
           <div class="container">
             <h1>Scan to Print</h1>
-            <p class="sub">No phone number needed · Secure &amp; Private</p>
+            <p class="sub">No phone number needed · Secure & Private</p>
             
             <div class="qr-box">
-              <img src="\${qrImg}" />
+              <img src="${qrImg}" />
             </div>
             
-            <div class="code-label">Or visit the site &amp; enter code</div>
-            <div class="code-val">\${code}</div>
+            <div class="code-label">Or visit the site & enter code</div>
+            <div class="code-val">${code}</div>
             
             <div class="instructions">
               <div class="step">
@@ -2610,7 +2610,7 @@ function printQRFlyer(code) {
               </div>
               <div class="step">
                 <div class="num">3</div>
-                <div>Choose your copies, B&amp;W/Color settings, and send!</div>
+                <div>Choose your copies, B&W/Color settings, and send!</div>
               </div>
             </div>
           </div>
@@ -2623,7 +2623,7 @@ function printQRFlyer(code) {
           <\/script>
         </body>
       </html>
-    \`);
+    `);
     flyWin.document.close();
   }, 300);
 }
