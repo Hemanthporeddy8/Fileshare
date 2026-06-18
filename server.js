@@ -76,35 +76,42 @@ app.post('/api/auth/signup', async (req, res) => {
     if (!dbUsersCollection) {
       return res.status(503).json({ error: 'Database is not connected.' });
     }
-    const { email, password, code } = req.body;
-    if (!email || !password || !code) {
-      return res.status(400).json({ error: 'Email, password, and room code are required.' });
-    }
-    const cleanCode = code.trim().toUpperCase().slice(0, 6);
-    if (!/^[A-Z0-9]{6}$/.test(cleanCode)) {
-      return res.status(400).json({ error: 'Room code must be exactly 6 alphanumeric characters.' });
-    }
-
-    const existingCode = await dbUsersCollection.findOne({ code: cleanCode });
-    if (existingCode) {
-      return res.status(400).json({ error: 'This room code is already taken. Please choose another.' });
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
     }
     const existingEmail = await dbUsersCollection.findOne({ email: email.toLowerCase() });
     if (existingEmail) {
       return res.status(400).json({ error: 'This email is already registered.' });
     }
 
+    const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let code;
+    let codeExists = true;
+    let attempts = 0;
+    while (codeExists && attempts < 10) {
+      code = Array.from({ length: 6 }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join('');
+      const existingCode = await dbUsersCollection.findOne({ code });
+      if (!existingCode) {
+        codeExists = false;
+      }
+      attempts++;
+    }
+    if (codeExists) {
+      return res.status(500).json({ error: 'Failed to generate a unique room code. Please try again.' });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     await dbUsersCollection.insertOne({
       email: email.toLowerCase(),
       passwordHash,
-      code: cleanCode,
+      code: code,
       createdAt: new Date(),
       transfersCount: 0,
       isPremium: false
     });
 
-    res.json({ ok: true, code: cleanCode });
+    res.json({ ok: true, code: code });
   } catch (err) {
     console.error('Signup error:', err);
     res.status(500).json({ error: 'Internal server error during registration.' });

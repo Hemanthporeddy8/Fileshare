@@ -138,6 +138,10 @@ const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0
   ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
   : 'wss://fileshare-qhgn.onrender.com/ws';
 
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? `${location.protocol}//${location.host}`
+  : 'https://fileshare-qhgn.onrender.com';
+
 let logTimer = null, logSeconds = 0;
 function logD(msg) {
   console.log(msg);
@@ -233,8 +237,8 @@ function showHome(forceHome=false){
           <div class="ic">📥</div><div class="lb">Create Inbox</div><div class="sb">Get a temporary drop dashboard</div>
         </button>
         <button class="mb" onclick="showPrintShopAuth()" style="grid-column: span 2;">
-          <span class="btn-qmark" data-tooltip="Claim a permanent room code (e.g. PRINT1) for your print shop. Print the QR flyer for your wall so customers can send print jobs instantly." onclick="event.stopPropagation()">?</span>
-          <div class="ic">🖨️</div><div class="lb">Print Shop Mode</div><div class="sb">Claim a permanent QR &amp; dashboard</div>
+          <span class="btn-qmark" data-tooltip="Claim a permanent room code for your sharing needs. Print the QR flyer for your wall so users can send files instantly." onclick="event.stopPropagation()">?</span>
+          <div class="ic">✨</div><div class="lb">Express Permanent Share Mode</div><div class="sb">Claim a permanent QR &amp; dashboard</div>
         </button>
       </div>
     </div>
@@ -2283,7 +2287,7 @@ function showAuthPage(isRegister = false) {
   root().innerHTML = `
     <div class="card fade" style="max-width: 420px;">
       <div class="rsb" style="margin-bottom: 1.25rem">
-        <span style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700">Print Shop Owner</span>
+        <span style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700">Express Permanent Share Owner</span>
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
       
@@ -2300,20 +2304,20 @@ function showAuthPage(isRegister = false) {
           <input type="email" id="auth-email" required class="ci" placeholder="EMAIL" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="email">
         </div>
         
-        ${isRegister ? `
         <div style="margin-bottom: 1rem; text-align:left;">
-          <div class="slb" style="margin-bottom:0.3rem">Desired Permanent Code (6 letters/numbers)</div>
-          <input type="text" id="auth-code" required class="ci" placeholder="E.G. PRINT1" maxlength="6" minlength="6" style="font-size:0.95rem; letter-spacing:0.1em; padding:0.65rem; text-align:left; margin:0;" autocomplete="off" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+          <div class="slb" style="margin-bottom:0.3rem">Password</div>
+          <input type="password" id="auth-password" required class="ci" placeholder="PASSWORD" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="${isRegister ? 'new-password' : 'current-password'}">
+        </div>
+
+        ${isRegister ? `
+        <div style="margin-bottom: 1.5rem; text-align:left;">
+          <div class="slb" style="margin-bottom:0.3rem">Confirm Password</div>
+          <input type="password" id="auth-confirm-password" required class="ci" placeholder="CONFIRM PASSWORD" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="new-password">
         </div>
         ` : ''}
 
-        <div style="margin-bottom: 1.5rem; text-align:left;">
-          <div class="slb" style="margin-bottom:0.3rem">Password</div>
-          <input type="password" id="auth-password" required class="ci" placeholder="PASSWORD" style="font-size:0.95rem; letter-spacing:0; padding:0.65rem; text-align:left; margin:0;" autocomplete="current-password">
-        </div>
-
         <button type="submit" id="auth-submit-btn" class="btn ba" style="font-weight:600;">
-          ${isRegister ? 'Create Account &amp; Claim Code' : 'Log In to Dashboard'}
+          ${isRegister ? 'Create Account &amp; Get Code' : 'Log In to Dashboard'}
         </button>
       </form>
     </div>
@@ -2335,12 +2339,11 @@ async function handleAuthSubmit(e, isRegister) {
   const payload = { email, password };
 
   if (isRegister) {
-    const code = $('auth-code').value.trim().toUpperCase();
-    if (code.length !== 6) {
-      showAuthError('Room code must be exactly 6 characters.');
+    const confirmPassword = $('auth-confirm-password').value;
+    if (password !== confirmPassword) {
+      showAuthError('Passwords do not match.');
       return;
     }
-    payload.code = code;
   }
 
   submitBtn.disabled = true;
@@ -2348,7 +2351,7 @@ async function handleAuthSubmit(e, isRegister) {
   submitBtn.textContent = 'Processing...';
 
   try {
-    const endpoint = isRegister ? '/api/auth/signup' : '/api/auth/login';
+    const endpoint = isRegister ? `${API_BASE}/api/auth/signup` : `${API_BASE}/api/auth/login`;
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2362,7 +2365,7 @@ async function handleAuthSubmit(e, isRegister) {
     }
 
     if (isRegister) {
-      const loginRes = await fetch('/api/auth/login', {
+      const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -2485,7 +2488,7 @@ function printQRFlyer(code) {
     flyWin.document.write(`
       <html>
         <head>
-          <title>Print Shop QR Flyer - ${code}</title>
+          <title>Express Permanent Share QR Flyer - ${code}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Syne:wght@700;800&display=swap');
             body {
