@@ -134,11 +134,19 @@ const safeStorage = {
   }
 };
 
-const SIG = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+const isLocal = (
+  location.hostname === 'localhost' || 
+  location.hostname === '127.0.0.1' || 
+  location.hostname.startsWith('192.168.') || 
+  location.hostname.startsWith('10.') || 
+  location.hostname.startsWith('172.')
+);
+
+const SIG = isLocal
   ? `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`
   : 'wss://fileshare-qhgn.onrender.com/ws';
 
-const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+const API_BASE = isLocal
   ? `${location.protocol}//${location.host}`
   : 'https://fileshare-qhgn.onrender.com';
 
@@ -240,6 +248,10 @@ function showHome(forceHome=false){
           <span class="btn-qmark" data-tooltip="Claim a permanent room code for your sharing needs. Print the QR flyer for your wall so users can send files instantly." onclick="event.stopPropagation()">?</span>
           <div class="ic">✨</div><div class="lb">Express Permanent Share Mode</div><div class="sb">Claim a permanent QR &amp; dashboard</div>
         </button>
+        <button class="mb" onclick="showWifiShare()" style="grid-column: span 2;">
+          <span class="btn-qmark" data-tooltip="Share files over your local WiFi network. This requires running the server locally on your PC, allowing ultra-fast transfers without the internet." onclick="event.stopPropagation()">?</span>
+          <div class="ic">📶</div><div class="lb">Share via WiFi</div><div class="sb">Connect locally without internet</div>
+        </button>
       </div>
     </div>
     <div class="pills">
@@ -248,6 +260,99 @@ function showHome(forceHome=false){
       <span class="pill">🗑️ Never stored</span>
       <span class="pill">💸 Free forever</span>
     </div>`;
+}
+
+function showWifiShare() {
+  stopTimer();
+  
+  if (!isLocal) {
+    root().innerHTML = `
+      <div class="card fade">
+        <div class="rsb" style="margin-bottom:1.25rem">
+          <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">📶 Share via WiFi</span>
+          <button class="btn bg bsm" onclick="showHome(true)">← Back</button>
+        </div>
+        <div style="text-align:center; padding:1.5rem 1rem; border:1.5px dashed var(--b); border-radius:var(--r); background:rgba(255,255,255,0.01);">
+          <div style="font-size:2rem; margin-bottom:0.75rem;">💻</div>
+          <div style="font-family:Syne,sans-serif; font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--wn);">Local Server Required</div>
+          <p style="font-size:0.75rem; color:var(--m); line-height:1.4; max-width:340px; margin:0 auto 1rem;">
+            This feature is designed for offline sharing when the application is running locally on your PC (e.g. via <code>npm start</code> or double-clicking the app).
+          </p>
+          <p style="font-size:0.72rem; color:var(--m2); line-height:1.4;">
+            Since you are currently accessing this site over the public cloud (Vercel/Render), please use the standard <strong>Send File</strong> or <strong>Express Permanent Share Mode</strong> options.
+          </p>
+        </div>
+      </div>`;
+    return;
+  }
+  
+  root().innerHTML = `
+    <div class="card fade">
+      <div class="rsb" style="margin-bottom:1.25rem">
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">📶 Share via WiFi</span>
+        <button class="btn bg bsm" onclick="showHome(true)">← Back</button>
+      </div>
+      <div id="wifi-loader" style="text-align:center; padding:2rem; color:var(--m);">
+        Retrieving local WiFi IP...
+      </div>
+      <div id="wifi-content" style="display:none;">
+        <div style="display:flex; gap:1.2rem; align-items:flex-start; flex-wrap:wrap;">
+          <div style="flex:1.2; min-width:240px;">
+            <div style="font-size:0.8rem; color:var(--m); font-weight:500; margin-bottom:0.5rem; line-height:1.4;">
+              Scan the QR code or visit the link on another device on the <strong>same WiFi network</strong> to send/receive files locally.
+            </div>
+            <div class="cb" style="margin: 0.75rem 0;">
+              <div>
+                <div class="cl">Local WiFi Address</div>
+                <div class="cv" id="wifi-address" style="font-size:1.1rem; letter-spacing:0; font-family:'IBM Plex Mono',monospace; color:var(--a);">http://...</div>
+              </div>
+              <button class="btn bg bsm" onclick="cpText($('wifi-address').textContent, this)">Copy</button>
+            </div>
+          </div>
+          <div style="text-align:center; margin:0 auto; flex-shrink:0;">
+            <div class="qrw" id="wifi-qrc"></div>
+            <div style="font-size:.62rem; color:var(--m); margin-top:.3rem">Scan to connect</div>
+          </div>
+        </div>
+        <div class="div" style="margin: 1.25rem 0;"></div>
+        <div style="font-size:0.75rem; color:var(--m2); line-height:1.45;">
+          <strong>⚡ Note:</strong> Files will stream directly between devices over your local network. No files ever travel over the internet, and transfer speeds are limited only by your WiFi router!
+        </div>
+      </div>
+    </div>`;
+  
+  fetch('/api/wifi/ip')
+    .then(r => r.json())
+    .then(d => {
+      const wifiLoader = $('wifi-loader');
+      if (wifiLoader) wifiLoader.remove();
+      
+      const wifiContent = $('wifi-content');
+      if (wifiContent) wifiContent.style.display = 'block';
+      
+      const localUrl = `http://${d.ip}:${d.port}`;
+      $('wifi-address').textContent = localUrl;
+      
+      $('wifi-qrc').innerHTML = '';
+      new QRCode($('wifi-qrc'), {
+        text: localUrl,
+        width: 130,
+        height: 130,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    })
+    .catch(err => {
+      console.error(err);
+      const loader = $('wifi-loader');
+      if (loader) {
+        loader.innerHTML = `
+          <div style="color:var(--er); font-size:0.78rem;">
+            Failed to retrieve local IP address from server. Make sure the local server is running.
+          </div>`;
+      }
+    });
 }
 
 function showSend(){

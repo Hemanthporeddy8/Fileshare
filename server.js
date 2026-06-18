@@ -59,6 +59,27 @@ app.get('/health', (_req, res) => res.json({
   uptime: Math.round(process.uptime()),
 }));
 
+function getLocalIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
+app.get('/api/wifi/ip', (req, res) => {
+  try {
+    const ip = getLocalIpAddress();
+    res.json({ ip, port: PORT });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve local IP address.' });
+  }
+});
+
 app.post('/api/relay/upload', (req, res) => {
   res.status(501).json({ error: 'Relay is disabled. Use direct P2P transfer.' });
 });
