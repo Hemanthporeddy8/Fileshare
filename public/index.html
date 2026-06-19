@@ -427,11 +427,9 @@ function startSend(file){
              style="display:inline-block;width:320px;height:100px"
              data-ad-client="ca-pub-XXXXXXXXXX"
              data-ad-slot="YYYYYYYYYY"></ins>
-        <script>
-          (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
       </div>
     </div>`;
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error("AdSense error:", e); }
   $('fic').textContent=mIco(file.type);
   $('qrc').innerHTML = '';
   new QRCode($('qrc'), {
@@ -841,9 +839,6 @@ function showInboxDashboard(code, token = null) {
                style="display:inline-block;width:468px;height:60px"
                data-ad-client="ca-pub-XXXXXXXXXX"
                data-ad-slot="ZZZZZZZZZZ"></ins>
-          <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-          </script>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem; flex-wrap:wrap; gap:0.5rem;">
@@ -886,12 +881,15 @@ function showInboxDashboard(code, token = null) {
                style="display:inline-block;width:300px;height:600px"
                data-ad-client="ca-pub-XXXXXXXXXX"
                data-ad-slot="WWWWWWWWWW"></ins>
-          <script>
-            (adsbygoogle = window.adsbygoogle || []).push({});
-          </script>
         </div>
       </div>
     </div>`;
+  try {
+    (window.adsbygoogle = window.adsbygoogle || []).push({});
+    (window.adsbygoogle = window.adsbygoogle || []).push({});
+  } catch (e) {
+    console.error("AdSense dashboard push error:", e);
+  }
 
   $('qrc').innerHTML = '';
   new QRCode($('qrc'), {
@@ -1534,11 +1532,9 @@ function showInboxSenderProgressUI(file, code, index, count) {
              style="display:inline-block;width:320px;height:100px"
              data-ad-client="ca-pub-XXXXXXXXXX"
              data-ad-slot="YYYYYYYYYY"></ins>
-        <script>
-          (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
       </div>
     </div>`;
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error("AdSense error:", e); }
   $('fic').textContent=mIco(file.type);
 }
 
@@ -1832,11 +1828,9 @@ function showSendPersistentProgressUI(file, index, count, dc, pc, ws) {
              style="display:inline-block;width:320px;height:100px"
              data-ad-client="ca-pub-XXXXXXXXXX"
              data-ad-slot="YYYYYYYYYY"></ins>
-        <script>
-          (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
       </div>
     </div>`;
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error("AdSense error:", e); }
   $('fic').textContent = mIco(file.type);
 }
 
