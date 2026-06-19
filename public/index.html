@@ -931,6 +931,30 @@ function showInboxDashboard(code, token = null) {
     correctLevel : QRCode.CorrectLevel.M
   });
 
+  // Query room-status to see if this is premium/trial to hide ads and configure flyer options
+  window.inboxIsPremium = false;
+  window.inboxIsPremiumOrTrial = false;
+  
+  if (isPermanent) {
+    fetch(`${API_BASE}/api/auth/room-status/${code}`)
+      .then(r => r.json())
+      .then(d => {
+        window.inboxIsPremium = !!d.isPremium;
+        window.inboxIsPremiumOrTrial = !!d.isPremiumOrTrial;
+        
+        if (d.isPremiumOrTrial) {
+          // Hide Dashboard Header Ad
+          const headerAd = document.querySelector('[data-ad-slot="ZZZZZZZZZZ"]')?.closest('div');
+          if (headerAd) headerAd.style.display = 'none';
+          
+          // Hide Dashboard Sidebar Ad
+          const sidebarAd = document.querySelector('[data-ad-slot="WWWWWWWWWW"]')?.closest('.card');
+          if (sidebarAd) sidebarAd.style.display = 'none';
+        }
+      })
+      .catch(err => console.warn("Failed to check inbox premium status:", err));
+  }
+
   if (inboxWs && inboxWs.readyState === 1) {
     $('inbox-status').className = 'bdg bok';
     updateInboxConnectedCount();
@@ -2790,6 +2814,35 @@ function printInboxFile(fileId) {
 
 function printQRFlyer(code) {
   const url = `${location.origin}${location.pathname}?inbox=${code}`;
+  
+  // Check if owner is premium
+  const isPremium = !!window.inboxIsPremium;
+  
+  let adBlockHTML = '';
+  if (isPremium) {
+    adBlockHTML = `
+      <!-- Flyer Custom Brand/Sponsor Card (Premium Member Option) -->
+      <div class="flyer-ad-placeholder">
+        <div style="font-size: 0.62rem; color: var(--a); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; font-weight: 600;">Custom Advertisement / Sponsor Space</div>
+        <div class="ad-content" style="border: 1.5px dashed var(--a); border-radius: 8px; padding: 0.8rem; background: #fafafc; text-align: center;">
+          <div style="font-size: 0.85rem; font-weight: 800; color: #333344; text-transform: uppercase; letter-spacing: 0.05em;">[ Your Sponsor Ad / Logo Here ]</div>
+          <div style="font-size: 0.65rem; color: #777788; margin-top: 0.2rem;">Premium Member Option — Edit this card to display your own business or sponsor logo!</div>
+        </div>
+      </div>
+    `;
+  } else {
+    adBlockHTML = `
+      <!-- Default Platform Ad (Monetized by FileShare) -->
+      <div class="flyer-ad-placeholder">
+        <div style="font-size: 0.62rem; color: #888899; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; font-weight: 600;">Sponsored Advertisement</div>
+        <div class="ad-content" style="border: 1.5px dashed #a0a0b0; border-radius: 8px; padding: 0.8rem; background: #f4f4f8; text-align: center;">
+          <div style="font-size: 0.85rem; font-weight: 800; color: #333344; text-transform: uppercase; letter-spacing: 0.05em;">FileShare Ads</div>
+          <div style="font-size: 0.65rem; color: #777788; margin-top: 0.2rem;">Want to print your own sponsor logo here? Upgrade to Premium!</div>
+        </div>
+      </div>
+    `;
+  }
+
   const tempDiv = document.createElement('div');
   new QRCode(tempDiv, {
     text: url,
@@ -2898,7 +2951,6 @@ function printQRFlyer(code) {
               margin-right: auto;
             }
             .flyer-ad-placeholder .ad-content {
-              border: 1.5px dashed #a0a0b0;
               border-radius: 8px;
               padding: 0.8rem;
               background: #fafafc;
@@ -2960,14 +3012,7 @@ function printQRFlyer(code) {
               </div>
             </div>
             
-            <!-- Flyer Sponsorship Ad Space Placeholder -->
-            <div class="flyer-ad-placeholder">
-              <div style="font-size: 0.62rem; color: #888899; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; font-weight: 600;">Sponsored Advertisement</div>
-              <div class="ad-content">
-                <div style="font-size: 0.85rem; font-weight: 800; color: #333344; text-transform: uppercase; letter-spacing: 0.05em;">[ Your Sponsor Ad / Logo Here ]</div>
-                <div style="font-size: 0.65rem; color: #777788; margin-top: 0.2rem;">Support local business — Advertise on this flyer!</div>
-              </div>
-            </div>
+            ${adBlockHTML}
           </div>
           <script>
             window.onload = function() {
@@ -3115,7 +3160,7 @@ function showPremiumPopup() {
       <div style="background:rgba(255,255,255,0.02); border:1px solid var(--b); border-radius:10px; padding:1rem; margin-bottom:1.5rem; font-size:0.78rem; text-align:left; line-height:1.55; display:flex; flex-direction:column; gap:0.6rem;">
         <div>🚫 <strong>Ad-Free Experience</strong>: Smooth, cleaner dashboards.</div>
         <div>🛡️ <strong>Premium Threat Scanner</strong>: Block dangerous files at the source.</div>
-        <div>🖨️ <strong>Flyer Sponsor Cards</strong>: Brand advertisement slot on QR flyers.</div>
+        <div>🖨️ <strong>Custom Flyer Branding</strong>: Replace FileShare platform ads with your own business or sponsor logo on printed flyers.</div>
         <div>⚡ <strong>Permanent Codes</strong>: Secure dedicated room code forever.</div>
       </div>
       
@@ -3194,7 +3239,7 @@ function showPremiumPopup() {
           <div style="background:rgba(255,255,255,0.02); border:1px solid var(--b); border-radius:10px; padding:1rem; margin-bottom:1.5rem; font-size:0.78rem; text-align:left; line-height:1.55; display:flex; flex-direction:column; gap:0.6rem; width:100%;">
             <div>🚫 <strong>Ad-Free Experience</strong>: Smooth, cleaner dashboards.</div>
             <div>🛡️ <strong>Premium Threat Scanner</strong>: Block dangerous files at the source.</div>
-            <div>🖨️ <strong>Flyer Sponsor Cards</strong>: Brand advertisement slot on QR flyers.</div>
+            <div>🖨️ <strong>Custom Flyer Branding</strong>: Replace FileShare platform ads with your own business or sponsor logo on printed flyers.</div>
             <div>⚡ <strong>Permanent Code Active</strong>: Secure dedicated room code <strong>${code}</strong>.</div>
           </div>
           
