@@ -842,7 +842,7 @@ function showInboxDashboard(code, token = null) {
             <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
           </div>
         </div>
-        <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
+        <div id="inbox-dashboard-title" style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard${isPermanent ? '' : ' (Standard)'}</div>
         
         <div style="display:flex;gap:1.2rem;align-items:flex-start;margin-bottom: 1.5rem; flex-wrap: wrap;">
           <div style="flex:1.2;min-width:240px">
@@ -942,7 +942,20 @@ function showInboxDashboard(code, token = null) {
         window.inboxIsPremium = !!d.isPremium;
         window.inboxIsPremiumOrTrial = !!d.isPremiumOrTrial;
         
-        if (d.isPremiumOrTrial) {
+        // Dynamically show plan mode in dashboard title
+        const titleEl = $('inbox-dashboard-title');
+        if (titleEl) {
+          if (d.isPremium) {
+            titleEl.textContent = 'Inbox Dashboard (Premium)';
+          } else if (d.hasTrial) {
+            titleEl.textContent = 'Inbox Dashboard (Free Trial)';
+          } else {
+            titleEl.textContent = 'Inbox Dashboard (Standard)';
+          }
+        }
+        
+        // ONLY premium removes ads from dashboard
+        if (d.isPremium) {
           // Hide Dashboard Header Ad
           const headerAd = document.querySelector('[data-ad-slot="ZZZZZZZZZZ"]')?.closest('div');
           if (headerAd) headerAd.style.display = 'none';
@@ -950,9 +963,35 @@ function showInboxDashboard(code, token = null) {
           // Hide Dashboard Sidebar Ad
           const sidebarAd = document.querySelector('[data-ad-slot="WWWWWWWWWW"]')?.closest('.card');
           if (sidebarAd) sidebarAd.style.display = 'none';
+        } else {
+          // Ensure Dashboard Header Ad is shown for standard / trial users
+          const headerAd = document.querySelector('[data-ad-slot="ZZZZZZZZZZ"]')?.closest('div');
+          if (headerAd) headerAd.style.display = 'block';
+          
+          // Ensure Dashboard Sidebar Ad is shown for standard / trial users
+          const sidebarAd = document.querySelector('[data-ad-slot="WWWWWWWWWW"]')?.closest('.card');
+          if (sidebarAd) sidebarAd.style.display = 'flex';
         }
       })
       .catch(err => console.warn("Failed to check inbox premium status:", err));
+  } else {
+    // Non-permanent room (Standard user by default)
+    window.inboxIsPremium = false;
+    window.inboxIsPremiumOrTrial = false;
+    
+    // Set title immediately to Standard
+    const titleEl = $('inbox-dashboard-title');
+    if (titleEl) {
+      titleEl.textContent = 'Inbox Dashboard (Standard)';
+    }
+    
+    // Ensure Dashboard Header Ad is shown for standard users
+    const headerAd = document.querySelector('[data-ad-slot="ZZZZZZZZZZ"]')?.closest('div');
+    if (headerAd) headerAd.style.display = 'block';
+    
+    // Ensure Dashboard Sidebar Ad is shown for standard users
+    const sidebarAd = document.querySelector('[data-ad-slot="WWWWWWWWWW"]')?.closest('.card');
+    if (sidebarAd) sidebarAd.style.display = 'flex';
   }
 
   if (inboxWs && inboxWs.readyState === 1) {
