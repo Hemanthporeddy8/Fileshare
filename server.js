@@ -170,6 +170,26 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/auth/room-status/:code', async (req, res) => {
+  try {
+    if (!dbUsersCollection) {
+      return res.json({ isPremiumOrTrial: false });
+    }
+    const code = req.params.code.toUpperCase();
+    const user = await dbUsersCollection.findOne({ code });
+    if (!user) {
+      return res.json({ isPremiumOrTrial: false });
+    }
+    const isPremium = !!user.isPremium;
+    const trialDuration = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const isTrial = user.createdAt && (new Date() - new Date(user.createdAt)) < trialDuration;
+    res.json({ isPremiumOrTrial: isPremium || isTrial });
+  } catch (err) {
+    console.error('Room status check error:', err);
+    res.json({ isPremiumOrTrial: false });
+  }
+});
+
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // WebSocket signaling

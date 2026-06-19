@@ -2124,7 +2124,7 @@ function removePreparedFile(idx) {
   }
 }
 
-function startBulkTransfer() {
+async function startBulkTransfer() {
   const nickname = ($('prep-nickname')?.value || '').trim().toUpperCase();
   safeStorage.set('fs_nickname', nickname);
   
@@ -2133,6 +2133,56 @@ function startBulkTransfer() {
   const code = window.prepCode;
   
   if (!files || files.length === 0) return;
+
+  // If the target has a room code, check premium/trial status first
+  if (code && code.length === 6) {
+    const btn = document.querySelector('.btn.ba');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '🛡️ Running Security Scan...';
+    }
+    
+    let isPremiumOrTrial = false;
+    try {
+      const statusRes = await fetch(`${API_BASE}/api/auth/room-status/${code}`);
+      const statusData = await statusRes.json();
+      isPremiumOrTrial = !!statusData.isPremiumOrTrial;
+    } catch (err) {
+      console.warn("Failed to check room status, bypassing scan", err);
+    }
+    
+    if (isPremiumOrTrial) {
+      for (const f of files) {
+        // 1. Double extension check
+        const extCheck = checkFilenameSafety(f.name);
+        if (!extCheck.safe) {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+          }
+          alert(`⚠️ Security Block: ${f.name} is blocked. Reason: ${extCheck.reason}`);
+          return;
+        }
+        
+        // 2. Magic byte content check
+        const contentCheck = await verifyFileContent(f);
+        if (!contentCheck.safe) {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+          }
+          alert(contentCheck.reason);
+          return;
+        }
+      }
+    }
+    
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
 
   if (type === 'inbox') {
     const copies = $('print-copies')?.value || '1';
@@ -2918,6 +2968,70 @@ function printQRFlyer(code) {
     `);
     flyWin.document.close();
   }, 300);
+}
+
+function checkFilenameSafety(filename) {
+  const parts = filename.toLowerCase().split('.');
+  if (parts.length >= 3) {
+    const dangerousExtensions = ['exe', 'scr', 'bat', 'cmd', 'vbs', 'js', 'sh', 'msi', 'ps1', 'com', 'pif'];
+    const lastExtension = parts[parts.length - 1];
+    if (dangerousExtensions.includes(lastExtension)) {
+      return { safe: false, reason: `Double extension masquerading as document.` };
+    }
+  }
+  return { safe: true };
+}
+
+function verifyFileContent(file) {
+  return new Promise((resolve) => {
+    if (file.size === 0) {
+      resolve({ safe: true });
+      return;
+    }
+    const reader = new FileReader();
+    const blob = file.slice(0, 4);
+    reader.readAsArrayBuffer(blob);
+    reader.onloadend = function(e) {
+      if (e.target.readyState === FileReader.DONE) {
+        const bytes = new Uint8Array(e.target.result);
+        let header = "";
+        for (let i = 0; i < bytes.length; i++) {
+          header += bytes[i].toString(16).padStart(2, '0');
+        }
+        
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        
+        // 4d5a is the Hex signature for Windows Executables ("MZ")
+        if (header.startsWith("4d5a")) {
+          const exeTypes = ['exe', 'dll', 'sys', 'scr'];
+          if (!exeTypes.includes(fileExt)) {
+            resolve({ safe: false, reason: `⚠️ Security Block: ${file.name} is actually a Windows Executable program (4d5a). Transfer blocked for your safety.` });
+            return;
+          }
+        }
+        
+        // 25504446 is hex for "%PDF"
+        if (header.startsWith("25504446")) {
+          if (fileExt !== 'pdf') {
+            resolve({ safe: false, reason: `Mismatched PDF file signature.` });
+            return;
+          }
+        }
+        
+        // 89504e47 is hex for PNG image
+        if (header.startsWith("89504e47")) {
+          if (fileExt !== 'png') {
+            resolve({ safe: false, reason: `Mismatched PNG image signature.` });
+            return;
+          }
+        }
+        
+        resolve({ safe: true });
+      } else {
+        resolve({ safe: true });
+      }
+    };
+  });
 }
 
 showHome();
