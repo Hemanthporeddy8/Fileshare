@@ -31,12 +31,18 @@ body{background:var(--bg);color:var(--t);font-family:'DM Sans',system-ui,sans-se
 .card{background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:2rem;backdrop-filter:blur(12px)}
 .fade{animation:fu .3s ease}
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.hdr{text-align:center;margin-bottom:2rem}
-.logo{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;margin-bottom:.35rem}
+.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;gap:1rem;flex-wrap:wrap;}
+.hdr-left{display:flex;flex-direction:column;align-items:flex-start}
+.logo{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;margin-bottom:.15rem}
 .li{width:32px;height:32px;background:var(--a);border-radius:8px;display:flex;align-items:center;justify-content:center}
 .li svg{width:17px;height:17px}
 .ln{font-family:'Syne',sans-serif;font-size:1.25rem;font-weight:800;letter-spacing:-.02em;color:var(--t)}
 .tg{font-size:.74rem;color:var(--m);letter-spacing:.05em;text-transform:uppercase}
+@media(max-width:480px){
+  .hdr{justify-content:center;text-align:center;}
+  .hdr-left{align-items:center;margin-bottom:0.5rem;}
+  #header-auth{width:100%;justify-content:center;}
+}
 .mg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.75rem}
 .mb{position:relative;background:var(--s);border:1px solid var(--b);border-radius:var(--rl);padding:1.75rem 1rem;cursor:pointer;text-align:center;transition:all .2s;color:var(--t)}
 .mb:hover{border-color:var(--bh);background:var(--ad);transform:translateY(-2px)}
@@ -112,11 +118,14 @@ footer a:hover{color:var(--a)}
 <div class="wrap">
   <div class="box">
     <header class="hdr">
-      <a href="/" class="logo">
-        <span class="li"><svg viewBox="0 0 17 17" fill="none"><path d="M8.5 1.5v11M3.5 7l5-5.5 5 5.5" stroke="#07070e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 15.5h14" stroke="#07070e" stroke-width="2" stroke-linecap="round"/></svg></span>
-        <span class="ln">FileShare</span>
-      </a>
-      <p class="tg">P2P · any size · always free</p>
+      <div class="hdr-left">
+        <a href="/" class="logo">
+          <span class="li"><svg viewBox="0 0 17 17" fill="none"><path d="M8.5 1.5v11M3.5 7l5-5.5 5 5.5" stroke="#07070e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 15.5h14" stroke="#07070e" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="ln">FileShare</span>
+        </a>
+        <p class="tg">P2P · any size · always free</p>
+      </div>
+      <div id="header-auth" style="display:flex; gap:0.5rem; align-items:center; justify-content:center;"></div>
     </header>
     <div id="root"></div>
     <footer>Files travel directly between browsers — never stored on a server.</footer>
@@ -202,6 +211,7 @@ function saveBlob(blob,name){ const url=URL.createObjectURL(blob); const a=Objec
 
 function showHome(forceHome=false){
   stopTimer();
+  updateHeaderAuth();
   if(forceHome){
     try{history.replaceState({}, '', location.pathname);}catch(e){}
   }
@@ -2692,10 +2702,12 @@ async function handleAuthSubmit(e, isRegister) {
       }
       localStorage.setItem('fs_auth_token', loginData.token);
       localStorage.setItem('fs_auth_code', loginData.code);
+      updateHeaderAuth();
       showInboxDashboard(loginData.code, loginData.token);
     } else {
       localStorage.setItem('fs_auth_token', data.token);
       localStorage.setItem('fs_auth_code', data.code);
+      updateHeaderAuth();
       showInboxDashboard(data.code, data.token);
     }
   } catch (err) {
@@ -2719,6 +2731,7 @@ function logoutPrintShop() {
   localStorage.removeItem('fs_auth_token');
   localStorage.removeItem('fs_auth_code');
   window.inboxToken = null;
+  updateHeaderAuth();
   closeInbox();
 }
 
@@ -3032,6 +3045,215 @@ function verifyFileContent(file) {
       }
     };
   });
+}
+
+function updateHeaderAuth() {
+  const container = $('header-auth');
+  if (!container) return;
+  
+  const token = localStorage.getItem('fs_auth_token');
+  const code = localStorage.getItem('fs_auth_code');
+  
+  if (token && code) {
+    fetch(`${API_BASE}/api/auth/room-status/${code}`)
+      .then(r => r.json())
+      .then(d => {
+        let statusBadge = '<span class="bdg bwn" style="cursor:pointer; margin:0;" onclick="showPremiumPopup()">⭐ Get Premium</span>';
+        if (d.isPremium) {
+          statusBadge = '<span class="bdg bok" style="cursor:pointer; margin:0;" onclick="showPremiumPopup()">👑 Premium</span>';
+        } else if (d.hasTrial) {
+          statusBadge = `<span class="bdg binf" style="cursor:pointer; margin:0;" onclick="showPremiumPopup()">⭐ Trial (${d.trialDaysRemaining}d left)</span>`;
+        }
+        
+        container.innerHTML = `
+          ${statusBadge}
+          <button class="btn bg bsm" onclick="logoutHeader()" style="margin:0;">Sign Out</button>
+        `;
+      })
+      .catch(() => {
+        container.innerHTML = `
+          <button class="btn bg bsm" onclick="showPremiumPopup()" style="border-color:var(--wn); color:var(--wn); margin:0;">⭐ Premium</button>
+          <button class="btn bg bsm" onclick="logoutHeader()" style="margin:0;">Sign Out</button>
+        `;
+      });
+  } else {
+    container.innerHTML = `
+      <button class="btn bg bsm" onclick="showPremiumPopup()" style="border-color:var(--wn); color:var(--wn); margin:0;">⭐ Premium</button>
+      <button class="btn bg bsm" onclick="showPrintShopAuth()" style="margin:0;">Sign In</button>
+    `;
+  }
+}
+
+function logoutHeader() {
+  localStorage.removeItem('fs_auth_token');
+  localStorage.removeItem('fs_auth_code');
+  window.inboxToken = null;
+  showHome(true);
+  updateHeaderAuth();
+}
+
+function showPremiumPopup() {
+  const modal = document.createElement('div');
+  modal.id = 'premium-modal';
+  modal.style.cssText = 'position:fixed; inset:0; background:rgba(7,7,14,0.92); backdrop-filter:blur(12px); display:flex; align-items:center; justify-content:center; z-index:9999; padding:1.5rem;';
+  
+  const token = localStorage.getItem('fs_auth_token');
+  const code = localStorage.getItem('fs_auth_code');
+  
+  let content = '';
+  
+  if (!token || !code) {
+    content = `
+      <div style="font-size:2.8rem; margin-bottom:1rem; text-align:center;">⭐</div>
+      <h2 style="font-family:Syne,sans-serif; font-size:1.5rem; font-weight:800; margin-bottom:1rem; text-align:center; color:var(--a);">Premium Threat Scanner</h2>
+      
+      <p style="font-size:0.82rem; color:var(--m); line-height:1.5; margin-bottom:1.5rem; text-align:center;">
+        Get premium protection for your print shop or business device. 
+        Detect spoofed file formats and double-extension threats before they reach your system.
+      </p>
+      
+      <div style="background:rgba(255,255,255,0.02); border:1px solid var(--b); border-radius:10px; padding:1rem; margin-bottom:1.5rem; font-size:0.78rem; text-align:left; line-height:1.55; display:flex; flex-direction:column; gap:0.6rem;">
+        <div>🚫 <strong>Ad-Free Experience</strong>: Smooth, cleaner dashboards.</div>
+        <div>🛡️ <strong>Premium Threat Scanner</strong>: Block dangerous files at the source.</div>
+        <div>🖨️ <strong>Flyer Sponsor Cards</strong>: Brand advertisement slot on QR flyers.</div>
+        <div>⚡ <strong>Permanent Codes</strong>: Secure dedicated room code forever.</div>
+      </div>
+      
+      <div style="color:var(--wn); font-size:0.75rem; text-align:center; margin-bottom:1.5rem; font-weight:600; background:var(--wnd); padding:0.6rem; border-radius:6px; border:1px solid rgba(251,191,36,0.15);">
+        🎁 Sign in or create an account to start your 7-Day Free Trial!
+      </div>
+      
+      <div style="display:flex; gap:0.6rem; width:100%;">
+        <button class="btn bg" onclick="$('premium-modal').remove()" style="flex:1; margin:0;">Cancel</button>
+        <button class="btn ba" onclick="$('premium-modal').remove(); showPrintShopAuth()" style="flex:1.2; margin:0;">Sign In / Sign Up</button>
+      </div>
+    `;
+    modal.innerHTML = `
+      <div class="card fade" style="width:100%; max-width:440px; margin:0; padding:2rem; border-color:var(--wn); box-shadow:0 8px 32px rgba(251,191,36,0.06); text-align:center;">
+        ${content}
+      </div>
+    `;
+    document.body.appendChild(modal);
+  } else {
+    modal.innerHTML = `
+      <div class="card fade" style="width:100%; max-width:440px; margin:0; padding:2rem; border-color:var(--wn); text-align:center; display:flex; flex-direction:column; justify-content:center; align-items:center; box-shadow:0 8px 32px rgba(251,191,36,0.06);">
+        <div style="font-size:1.2rem; color:var(--m);">Checking Status...</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    fetch(`${API_BASE}/api/auth/room-status/${code}`)
+      .then(r => r.json())
+      .then(d => {
+        const card = modal.querySelector('.card');
+        if (!card) return;
+        
+        let trialActionHTML = '';
+        let statusTitle = 'Premium Threat Scanner';
+        let statusBadge = '<span class="bdg bwn" style="margin-bottom:1rem;">⭐ Standard Room</span>';
+        
+        if (d.isPremium) {
+          statusTitle = 'Premium Active';
+          statusBadge = '<span class="bdg bok" style="margin-bottom:1rem; font-size:0.8rem; padding:0.4rem 1rem;">👑 Premium Active</span>';
+          trialActionHTML = `
+            <div style="font-size:0.82rem; color:var(--ok); margin-bottom:1.5rem; font-weight:600;">
+              Your Premium subscription is fully active! Ads are hidden and Threat Scanner is enabled.
+            </div>
+            <button class="btn bg" onclick="$('premium-modal').remove()" style="margin:0;">Close</button>
+          `;
+        } else if (d.hasTrial) {
+          statusTitle = 'Free Trial Active';
+          statusBadge = `<span class="bdg binf" style="margin-bottom:1rem; font-size:0.8rem; padding:0.4rem 1rem;">⭐ Free Trial: ${d.trialDaysRemaining} Days Left</span>`;
+          trialActionHTML = `
+            <div style="font-size:0.82rem; color:var(--a); margin-bottom:1.5rem; line-height:1.5;">
+              Your 7-Day Free Trial is active. Threat Scanner is fully armed to verify incoming files.
+            </div>
+            <button class="btn bg" onclick="$('premium-modal').remove()" style="margin:0;">Done</button>
+          `;
+        } else {
+          trialActionHTML = `
+            <div style="color:var(--wn); font-size:0.75rem; text-align:center; margin-bottom:1.5rem; font-weight:600; background:var(--wnd); padding:0.6rem; border-radius:6px; border:1px solid rgba(251,191,36,0.15); width:100%;">
+              🎁 You have not activated your free trial yet!
+            </div>
+            <div style="display:flex; gap:0.6rem; width:100%;">
+              <button class="btn bg" onclick="$('premium-modal').remove()" style="flex:1; margin:0;">Cancel</button>
+              <button class="btn ba" id="activate-trial-btn" onclick="activateFreeTrial()" style="flex:1.5; margin:0;">Activate 7-Day Trial</button>
+            </div>
+          `;
+        }
+        
+        card.innerHTML = `
+          <div style="font-size:2.8rem; margin-bottom:0.8rem;">⭐</div>
+          <h2 style="font-family:Syne,sans-serif; font-size:1.5rem; font-weight:800; margin-bottom:0.5rem; color:var(--a);">${statusTitle}</h2>
+          <div style="margin-bottom:1.25rem;">${statusBadge}</div>
+          
+          <p style="font-size:0.82rem; color:var(--m); line-height:1.5; margin-bottom:1.5rem;">
+            Protect your billing/printing computer. The Premium scanner inspects all dropped files for double extensions or disguised malicious payloads.
+          </p>
+          
+          <div style="background:rgba(255,255,255,0.02); border:1px solid var(--b); border-radius:10px; padding:1rem; margin-bottom:1.5rem; font-size:0.78rem; text-align:left; line-height:1.55; display:flex; flex-direction:column; gap:0.6rem; width:100%;">
+            <div>🚫 <strong>Ad-Free Experience</strong>: Smooth, cleaner dashboards.</div>
+            <div>🛡️ <strong>Premium Threat Scanner</strong>: Block dangerous files at the source.</div>
+            <div>🖨️ <strong>Flyer Sponsor Cards</strong>: Brand advertisement slot on QR flyers.</div>
+            <div>⚡ <strong>Permanent Code Active</strong>: Secure dedicated room code <strong>${code}</strong>.</div>
+          </div>
+          
+          ${trialActionHTML}
+        `;
+      })
+      .catch(err => {
+        console.error(err);
+        $('premium-modal').remove();
+        alert("Failed to load premium status.");
+      });
+  }
+}
+
+function activateFreeTrial() {
+  const token = localStorage.getItem('fs_auth_token');
+  if (!token) return;
+  
+  const btn = $('activate-trial-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = 'Activating...';
+  }
+  
+  fetch(`${API_BASE}/api/auth/activate-trial`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  })
+    .then(r => r.json().then(data => ({ status: r.status, data })))
+    .then(({ status, data }) => {
+      if (status !== 200) {
+        alert(data.error || 'Failed to activate free trial.');
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = 'Activate 7-Day Trial';
+        }
+        return;
+      }
+      
+      alert("🎉 7-Day Free Trial activated successfully! Your threat scanner is now active.");
+      $('premium-modal').remove();
+      updateHeaderAuth();
+      
+      const code = localStorage.getItem('fs_auth_code');
+      if (code && $('inbox-status')) {
+        showInboxDashboard(code, token);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert('Network error. Failed to activate trial.');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = 'Activate 7-Day Trial';
+      }
+    });
 }
 
 showHome();

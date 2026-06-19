@@ -182,11 +182,65 @@ app.get('/api/auth/room-status/:code', async (req, res) => {
     }
     const isPremium = !!user.isPremium;
     const trialDuration = 7 * 24 * 60 * 60 * 1000; // 7 days
-    const isTrial = user.createdAt && (new Date() - new Date(user.createdAt)) < trialDuration;
-    res.json({ isPremiumOrTrial: isPremium || isTrial });
+    
+    const isAutoTrial = user.createdAt && (new Date() - new Date(user.createdAt)) < trialDuration;
+    const isExplicitTrial = user.trialActivatedAt && (new Date() - new Date(user.trialActivatedAt)) < trialDuration;
+    
+    let trialDaysRemaining = null;
+    if (user.trialActivatedAt) {
+      trialDaysRemaining = Math.max(0, Math.ceil((trialDuration - (new Date() - new Date(user.trialActivatedAt))) / (24 * 60 * 60 * 1000)));
+    } else if (user.createdAt) {
+      trialDaysRemaining = Math.max(0, Math.ceil((trialDuration - (new Date() - new Date(user.createdAt))) / (24 * 60 * 60 * 1000)));
+    }
+
+    res.json({ 
+      isPremiumOrTrial: isPremium || isAutoTrial || isExplicitTrial,
+      isPremium,
+      hasTrial: !!(isAutoTrial || isExplicitTrial),
+      trialActivated: !!user.trialActivatedAt,
+      trialDaysRemaining
+    });
   } catch (err) {
     console.error('Room status check error:', err);
     res.json({ isPremiumOrTrial: false });
+  }
+});
+
+app.post('/api/auth/activate-trial', async (req, res) => {
+  try {
+    if (!dbUsersCollection) {
+      return res.status(503).json({ error: 'Database is not connected.' });
+    }
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authorization header required.' });
+    }
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid or expired token.' });
+    }
+    
+    const user = await dbUsersCollection.findOne({ code: decoded.code });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    
+    if (user.trialActivatedAt) {
+      return res.status(400).json({ error: 'Free trial has already been activated.' });
+    }
+    
+    await dbUsersCollection.updateOne(
+      { _id: user._id },
+      { $set: { trialActivatedAt: new Date() } }
+    );
+    
+    res.json({ ok: true, message: '7-Day Free Trial activated successfully!' });
+  } catch (err) {
+    console.error('Activate trial error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
