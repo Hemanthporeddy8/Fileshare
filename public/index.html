@@ -2826,6 +2826,21 @@ function printQRFlyer(code) {
               border-radius: 12px;
               padding: 1.25rem 1.5rem;
             }
+            .flyer-ad-placeholder {
+              margin-top: 1.5rem;
+              border-top: 1.5px dashed #cbcbd6;
+              padding-top: 1rem;
+              max-width: 480px;
+              margin-left: auto;
+              margin-right: auto;
+            }
+            .flyer-ad-placeholder .ad-content {
+              border: 1.5px dashed #a0a0b0;
+              border-radius: 8px;
+              padding: 0.8rem;
+              background: #fafafc;
+              text-align: center;
+            }
             .step {
               display: flex;
               gap: 0.75rem;
@@ -2879,6 +2894,15 @@ function printQRFlyer(code) {
               <div class="step">
                 <div class="num">3</div>
                 <div>Choose your copies, B&W/Color settings, and send!</div>
+              </div>
+            </div>
+            
+            <!-- Flyer Sponsorship Ad Space Placeholder -->
+            <div class="flyer-ad-placeholder">
+              <div style="font-size: 0.62rem; color: #888899; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; font-weight: 600;">Sponsored Advertisement</div>
+              <div class="ad-content">
+                <div style="font-size: 0.85rem; font-weight: 800; color: #333344; text-transform: uppercase; letter-spacing: 0.05em;">[ Your Sponsor Ad / Logo Here ]</div>
+                <div style="font-size: 0.65rem; color: #777788; margin-top: 0.2rem;">Support local business — Advertise on this flyer!</div>
               </div>
             </div>
           </div>
