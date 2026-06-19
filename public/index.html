@@ -226,11 +226,24 @@ function showHome(forceHome=false){
   }
   
   const session = getActiveSessionType();
+  let sessionModeName = '';
+  if (session) {
+    if (session.type === 'inbox') {
+      const isPerm = !!localStorage.getItem('fs_auth_token');
+      sessionModeName = isPerm ? 'Express Permanent Share Mode' : 'Create Inbox';
+    } else if (session.type === 'inboxsender') {
+      sessionModeName = 'Send to Inbox';
+    } else if (session.type === '1to1sender') {
+      sessionModeName = 'Send File';
+    } else if (session.type === '1to1receiver') {
+      sessionModeName = 'Receive File';
+    }
+  }
   const sessionBanner = session ? `
     <div onclick="resumeActiveSession()" style="background:var(--ad); border:1px solid var(--a); border-radius:var(--r); padding:0.75rem 1rem; margin-bottom:1.25rem; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:all 0.15s;" onmouseover="this.style.filter='brightness(1.15)'" onmouseout="this.style.filter=''">
       <div style="display:flex; align-items:center; gap:0.5rem;">
         <span class="dot dg pu" style="width:8px; height:8px;"></span>
-        <span style="font-size:0.8rem; font-weight:500;">Active Connection: <strong>${session.code}</strong> (${session.type==='inbox'?'Inbox':session.type==='inboxsender'?'Inbox Sender':session.type==='1to1sender'?'Sender':'Receiver'})</span>
+        <span style="font-size:0.8rem; font-weight:500;">Active Connection: <strong>${session.code}</strong> (${sessionModeName})</span>
       </div>
       <span style="font-size:0.75rem; color:var(--a); font-weight:600;">Resume →</span>
     </div>
@@ -393,7 +406,7 @@ function showSend(){
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
-        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send a file</span>
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Send File</span>
         <button class="btn bg bsm" onclick="showHome()">← Back</button>
       </div>
       <div class="slb" style="margin-bottom:0.15rem">Your Nickname (Optional)</div>
@@ -437,6 +450,7 @@ function startSend(file){
         <span class="bdg binf"><span class="dot db pu"></span> ${badgeText}</span>
         <button class="btn bg bsm" onclick="showSend()">Cancel</button>
       </div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Send File</div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
       <div style="display:flex;gap:1rem;align-items:flex-start">
         <div style="flex:1;min-width:0">
@@ -611,6 +625,7 @@ function showSendDone(file,mode,relayId){
   const ru=relayId?`${location.origin}${location.pathname}?relay=${relayId}`:'';
   root().innerHTML=`
     <div class="card fade" style="text-align:center">
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Send File</div>
       <div class="dic">✅</div>
       <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">File sent!</div>
       <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${file.name}</strong> (${fmtB(file.size)})</p>
@@ -625,7 +640,7 @@ function showRecv(){
   stopTimer();
   root().innerHTML=`
     <div class="card fade">
-      <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive a file</span><button class="btn bg bsm" onclick="showHome(true)">← Back</button></div>
+      <div class="rsb" style="margin-bottom:1.25rem"><span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Receive File</span><button class="btn bg bsm" onclick="showHome(true)">← Back</button></div>
       <div class="slb">Enter the 6-character code from the sender</div>
       <input class="ci" id="ci" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')" onkeydown="if(event.key==='Enter')tryJoin()">
       <button class="btn ba" onclick="tryJoin()">Connect →</button>
@@ -639,6 +654,7 @@ function startRecv(code){
   root().innerHTML=`
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1rem"><span class="bdg binf"><span class="dot db pu"></span> Connecting…</span><button class="btn bg bsm" onclick="showHome(true)">Cancel</button></div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Receive File</div>
       <div class="cb" style="margin-bottom:.85rem"><div><div class="cl">Room code</div><div class="cv">${code}</div></div></div>
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting to signal server…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
@@ -845,7 +861,7 @@ function showInboxDashboard(code, token = null) {
             <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
           </div>
         </div>
-        <div id="inbox-dashboard-title" style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard${isPermanent ? '' : ' (Standard)'}</div>
+        <div id="inbox-dashboard-title" style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">${isPermanent ? 'Express Permanent Share Mode' : 'Create Inbox (Standard)'}</div>
         
         <div style="display:flex;gap:1.2rem;align-items:flex-start;margin-bottom: 1.5rem; flex-wrap: wrap;">
           <div style="flex:1.2;min-width:240px">
@@ -949,11 +965,11 @@ function showInboxDashboard(code, token = null) {
         const titleEl = $('inbox-dashboard-title');
         if (titleEl) {
           if (d.isPremium) {
-            titleEl.textContent = 'Inbox Dashboard (Premium)';
+            titleEl.textContent = 'Express Permanent Share Mode (Premium)';
           } else if (d.hasTrial) {
-            titleEl.textContent = 'Inbox Dashboard (Free Trial)';
+            titleEl.textContent = 'Express Permanent Share Mode (Free Trial)';
           } else {
-            titleEl.textContent = 'Inbox Dashboard (Standard)';
+            titleEl.textContent = 'Express Permanent Share Mode (Standard)';
           }
         }
         
@@ -982,10 +998,10 @@ function showInboxDashboard(code, token = null) {
     window.inboxIsPremium = false;
     window.inboxIsPremiumOrTrial = false;
     
-    // Set title immediately to Standard
+    // Set title immediately to Create Inbox (Standard)
     const titleEl = $('inbox-dashboard-title');
     if (titleEl) {
-      titleEl.textContent = 'Inbox Dashboard (Standard)';
+      titleEl.textContent = 'Create Inbox (Standard)';
     }
     
     // Ensure Dashboard Header Ad is shown for standard users
@@ -1654,6 +1670,7 @@ function showInboxSenderProgressUI(file, code, index, count) {
           <button class="btn bg bsm" onclick="cancelInboxSender('${code}')" style="border-color:var(--er); color:var(--er);">Disconnect</button>
         </div>
       </div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Send to Inbox</div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
       
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
@@ -1858,6 +1875,7 @@ function showSendDonePersistent1to1(file, code, dc, pc, ws) {
   
   root().innerHTML = `
     <div class="card fade" style="text-align:center">
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem;text-align:left;">Send File</div>
       <div class="dic">✅</div>
       <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem">File sent!</div>
       <p style="font-size:.8rem;color:var(--m);margin-bottom:1.25rem"><strong>${file.name}</strong> (${fmtB(file.size)}) sent successfully</p>
@@ -1951,6 +1969,7 @@ function showSendPersistentProgressUI(file, index, count, dc, pc, ws) {
         <span class="bdg binf"><span class="dot db pu"></span> Sending file ${index + 1} of ${count}</span>
         <button class="btn bg bsm" onclick="disconnect1to1Sender()">Disconnect</button>
       </div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Send File</div>
       <div class="fr"><span class="fic" id="fic">📁</span><div><div class="fn">${file.name}</div><div class="fm">${fmtB(file.size)}</div></div></div>
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Offering file to receiver…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
@@ -1991,6 +2010,7 @@ function showRecvDonePersistent1to1(lastMeta, code, dc, pc, ws) {
           <button class="btn bg bsm" onclick="disconnect1to1Receiver()" style="border-color:var(--er); color:var(--er);">Disconnect</button>
         </div>
       </div>
+      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Receive File</div>
       
       ${hasFile ? `
         <div class="dic" style="margin-bottom:0.4rem">⬇️</div>
@@ -2126,6 +2146,9 @@ function showPrepareTransfer(files, type, code) {
   const savedNickname = safeStorage.get('fs_nickname') || '';
   const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
   
+  let modeTitleText = 'Send File';
+  if (type === 'inbox') modeTitleText = 'Send to Inbox';
+  
   let backClick = 'showHome(true)';
   if (type === '1to1') backClick = 'showSend()';
   else if (type === 'inbox') backClick = `startInboxSender('${code}')`;
@@ -2156,7 +2179,7 @@ function showPrepareTransfer(files, type, code) {
   root().innerHTML = `
     <div class="card fade">
       <div class="rsb" style="margin-bottom:1.25rem">
-        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">Prepare Transfer</span>
+        <span style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">${modeTitleText}</span>
         <button class="btn bg bsm" onclick="${backClick}">← Back</button>
       </div>
       
