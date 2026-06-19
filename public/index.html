@@ -836,7 +836,10 @@ function showInboxDashboard(code, token = null) {
     <div style="display:flex; gap:1.5rem; justify-content:center; align-items:flex-start; flex-wrap:wrap; width:100%; max-width:1000px; margin:0 auto;">
       <div class="card fade" style="flex:1; max-width: 600px; margin:0;">
         <div class="rsb" style="margin-bottom: 1rem">
-          <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
+            <button id="inbox-reconnect-btn" class="btn bg bsm" onclick="reconnectInbox('${code}')" style="display:none; margin:0; padding:0.25rem 0.6rem; font-size:0.7rem; border-color:var(--a); color:var(--a);">Reconnect</button>
+          </div>
           <div style="display:flex; gap:0.5rem">
             <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
             <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
@@ -998,6 +1001,8 @@ function showInboxDashboard(code, token = null) {
     $('inbox-status').className = 'bdg bok';
     updateInboxConnectedCount();
     setSt('Dashboard live — waiting for senders…', 'dg');
+    const recBtn = $('inbox-reconnect-btn');
+    if (recBtn) recBtn.style.display = 'none';
     
     const fileContainer = $('inbox-files');
     if (fileContainer) {
@@ -1064,6 +1069,35 @@ function showInboxDashboard(code, token = null) {
   }
 }
 
+function reconnectInbox(code) {
+  logD('Manual reconnect initiated.');
+  const statusEl = $('inbox-status');
+  if (statusEl) {
+    statusEl.className = 'bdg binf';
+    statusEl.innerHTML = '<span class="dot db pu"></span> Connecting...';
+  }
+  setSt('Connecting to signaling server...', 'dy');
+  
+  const recBtn = $('inbox-reconnect-btn');
+  if (recBtn) recBtn.style.display = 'none';
+
+  if (inboxWs) {
+    try {
+      inboxWs.onclose = null;
+      inboxWs.onerror = null;
+      inboxWs.close();
+    } catch(e) {}
+    inboxWs = null;
+  }
+  
+  for (const [senderId] of inboxPeers) {
+    cleanupInboxPeer(senderId);
+  }
+  inboxPeers.clear();
+  
+  runInboxReceiver(code);
+}
+
 function runInboxReceiver(code) {
   startTimer();
   logD('Connecting to signaling server as Inbox...');
@@ -1076,6 +1110,8 @@ function runInboxReceiver(code) {
     setSt('Dashboard live — waiting for senders…', 'dg');
     $('inbox-status').className = 'bdg bok';
     $('inbox-status').innerHTML = '<span class="dot dg pu"></span> Live Dashboard · 0 connected';
+    const recBtn = $('inbox-reconnect-btn');
+    if (recBtn) recBtn.style.display = 'none';
   };
   
   inboxWs.onmessage = async ({ data }) => {
@@ -1121,6 +1157,8 @@ function runInboxReceiver(code) {
       setSt('Dashboard disconnected. Reconnecting...', 'dy');
       $('inbox-status').className = 'bdg bwn';
       $('inbox-status').innerHTML = '<span class="dot dy pu"></span> Reconnecting...';
+      const recBtn = $('inbox-reconnect-btn');
+      if (recBtn) recBtn.style.display = 'inline-flex';
       setTimeout(() => {
         if (inboxWs !== null && getActiveSessionType()?.type === 'inbox') {
           runInboxReceiver(code);
@@ -1130,6 +1168,8 @@ function runInboxReceiver(code) {
       setSt('Dashboard disconnected.', 'dr');
       $('inbox-status').className = 'bdg bwn';
       $('inbox-status').innerHTML = '<span class="dot dr"></span> Disconnected';
+      const recBtn = $('inbox-reconnect-btn');
+      if (recBtn) recBtn.style.display = 'inline-flex';
       stopTimer();
     }
   };
@@ -1137,6 +1177,8 @@ function runInboxReceiver(code) {
   inboxWs.onerror = () => {
     logD('Signaling server error.');
     setSt('Error connecting to signal server.', 'dr');
+    const recBtn = $('inbox-reconnect-btn');
+    if (recBtn) recBtn.style.display = 'inline-flex';
     stopTimer();
   };
 }
