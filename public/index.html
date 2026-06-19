@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="description" content="Send files of any size, directly between devices. No login. No storage.">
 <title>FileShare</title>
+<!-- Google AdSense Script (Paste your Publisher ID below) -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXX" crossorigin="anonymous"></script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2322d3ee'/><path d='M16 6v16M10 14l6-8 6 8M8 26h16' stroke='%230a0a14' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -417,6 +419,18 @@ function startSend(file){
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+      
+      <!-- AdSense Mobile Banner -->
+      <div style="margin-top: 1.25rem; text-align: center; border-top: 1px dashed var(--b); padding-top: 1rem;">
+        <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:320px;height:100px"
+             data-ad-client="ca-pub-XXXXXXXXXX"
+             data-ad-slot="YYYYYYYYYY"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
     </div>`;
   $('fic').textContent=mIco(file.type);
   $('qrc').innerHTML = '';
@@ -791,64 +805,92 @@ function showInboxDashboard(code, token = null) {
 
   const url = `${location.origin}${location.pathname}?inbox=${code}`;
   root().innerHTML = `
-    <div class="card fade" style="max-width: 600px;">
-      <div class="rsb" style="margin-bottom: 1rem">
-        <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
-        <div style="display:flex; gap:0.5rem">
-          <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
-          <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
-        </div>
-      </div>
-      <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
-      
-      <div style="display:flex;gap:1.2rem;align-items:flex-start;margin-bottom: 1.5rem; flex-wrap: wrap;">
-        <div style="flex:1.2;min-width:240px">
-          <div class="cb" style="margin: 0 0 0.75rem 0;">
-            <div>
-              <div class="cl">Inbox Code</div>
-              <div class="cv" style="font-size: 1.6rem;">${code}</div>
-            </div>
-            <button class="btn bg bsm" onclick="cpText('${code}',this)">Copy</button>
+    <div style="display:flex; gap:1.5rem; justify-content:center; align-items:flex-start; flex-wrap:wrap; width:100%; max-width:1000px; margin:0 auto;">
+      <div class="card fade" style="flex:1; max-width: 600px; margin:0;">
+        <div class="rsb" style="margin-bottom: 1rem">
+          <span class="bdg binf" id="inbox-status"><span class="dot db pu"></span> Connecting...</span>
+          <div style="display:flex; gap:0.5rem">
+            <button class="btn bg bsm" onclick="showHome(true)">← Minimize</button>
+            <button class="btn bg bsm" onclick="${stopButtonAction}" style="border-color:var(--er); color:var(--er);">${stopButtonText}</button>
           </div>
-          <div class="slb">Share this drop link</div>
-          <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
-          ${isPermanent ? `
-          <button class="btn ba bsm" onclick="printQRFlyer('${code}')" style="width:100%; font-size:0.75rem; background:var(--okd); border-color:var(--ok); color:var(--ok); margin-top:0.75rem;">🖨️ Print QR Flyer for Wall</button>
-          ` : ''}
         </div>
-        <div style="text-align:center;flex-shrink:0;margin:0 auto"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to drop files</div></div>
-      </div>
-      
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem; flex-wrap:wrap; gap:0.5rem;">
-        <div style="font-size: 0.8rem; color: var(--m); font-weight: 500;">Received Files</div>
-        <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
-          <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
-            <input type="checkbox" id="always-awake" onchange="handleAlwaysAwakeChange(this)" style="accent-color:var(--a);"> ☕ Keep PC Awake
-          </label>
-          <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
-            <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
-          </label>
+        <div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:1rem">Inbox Dashboard</div>
+        
+        <div style="display:flex;gap:1.2rem;align-items:flex-start;margin-bottom: 1.5rem; flex-wrap: wrap;">
+          <div style="flex:1.2;min-width:240px">
+            <div class="cb" style="margin: 0 0 0.75rem 0;">
+              <div>
+                <div class="cl">Inbox Code</div>
+                <div class="cv" style="font-size: 1.6rem;">${code}</div>
+              </div>
+              <button class="btn bg bsm" onclick="cpText('${code}',this)">Copy</button>
+            </div>
+            <div class="slb">Share this drop link</div>
+            <div class="lr"><span class="lu" id="sl">${url}</span><button class="btn bg bsm" onclick="cpText($('sl').textContent,this)">Copy</button></div>
+            ${isPermanent ? `
+            <button class="btn ba bsm" onclick="printQRFlyer('${code}')" style="width:100%; font-size:0.75rem; background:var(--okd); border-color:var(--ok); color:var(--ok); margin-top:0.75rem;">🖨️ Print QR Flyer for Wall</button>
+            ` : ''}
+          </div>
+          <div style="text-align:center;flex-shrink:0;margin:0 auto"><div class="qrw" id="qrc"></div><div style="font-size:.62rem;color:var(--m);margin-top:.3rem">Scan to drop files</div></div>
         </div>
+        
+        <!-- AdSense Dashboard Header Ad -->
+        <div style="margin: 1.25rem 0; text-align: center; border-top: 1px dashed var(--b); border-bottom: 1px dashed var(--b); padding: 0.75rem 0;">
+          <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+          <ins class="adsbygoogle"
+               style="display:inline-block;width:468px;height:60px"
+               data-ad-client="ca-pub-XXXXXXXXXX"
+               data-ad-slot="ZZZZZZZZZZ"></ins>
+          <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          </script>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; border-bottom: 1px solid var(--b); padding-bottom: 0.5rem; flex-wrap:wrap; gap:0.5rem;">
+          <div style="font-size: 0.8rem; color: var(--m); font-weight: 500;">Received Files</div>
+          <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
+            <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
+              <input type="checkbox" id="always-awake" onchange="handleAlwaysAwakeChange(this)" style="accent-color:var(--a);"> ☕ Keep PC Awake
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer;">
+              <input type="checkbox" id="auto-accept" style="accent-color:var(--a);"> Auto-accept downloads
+            </label>
+          </div>
+        </div>
+
+        <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b); flex-wrap:wrap; gap:0.5rem;">
+          <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer; user-select:none; margin-right:auto;">
+            <input type="checkbox" id="select-all-files" onchange="toggleSelectAllFiles(this)" style="accent-color:var(--a); cursor:pointer;"> Select All
+          </label>
+          <div style="display:flex; gap:0.4rem;">
+            <button class="btn ba bsm" id="download-selected-btn" onclick="downloadSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0;">⬇️ Download Selected (<span id="selected-count">0</span>)</button>
+            <button class="btn bg bsm" id="zip-selected-btn" onclick="zipSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0; border-color:var(--a); color:var(--a);">📦 Zip Selected</button>
+          </div>
+        </div>
+        
+        <div id="inbox-files" style="display:flex; flex-direction:column; gap:0.75rem; max-height:280px; overflow-y:auto; padding-right:0.25rem;">
+          <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
+            No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
+          </div>
+        </div>
+        
+        <div class="stl" id="stl" style="display:flex;align-items:center;margin-top:1rem;"><span class="dot dy pu"></span><span id="stx">Initializing dashboard...</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
+        <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       </div>
 
-      <div id="inbox-bulk-actions" style="display:none; justify-content:space-between; align-items:center; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); padding:0.5rem; border-radius:6px; border:1px solid var(--b); flex-wrap:wrap; gap:0.5rem;">
-        <label style="display:inline-flex; align-items:center; gap:0.4rem; font-size:0.75rem; color:var(--t); cursor:pointer; user-select:none; margin-right:auto;">
-          <input type="checkbox" id="select-all-files" onchange="toggleSelectAllFiles(this)" style="accent-color:var(--a); cursor:pointer;"> Select All
-        </label>
-        <div style="display:flex; gap:0.4rem;">
-          <button class="btn ba bsm" id="download-selected-btn" onclick="downloadSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0;">⬇️ Download Selected (<span id="selected-count">0</span>)</button>
-          <button class="btn bg bsm" id="zip-selected-btn" onclick="zipSelectedFiles()" disabled style="font-size:0.7rem; padding:0.25rem 0.6rem; width:auto; margin:0; border-color:var(--a); color:var(--a);">📦 Zip Selected</button>
+      <!-- AdSense Dashboard Sidebar Card -->
+      <div class="card fade" style="width:340px; padding:1.25rem; flex-shrink:0; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:600px; margin:0;">
+        <div style="font-size:0.65rem; color:var(--m2); margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+        <div style="background:rgba(0,0,0,0.15); border-radius:8px; padding:10px; display:inline-block;">
+          <ins class="adsbygoogle"
+               style="display:inline-block;width:300px;height:600px"
+               data-ad-client="ca-pub-XXXXXXXXXX"
+               data-ad-slot="WWWWWWWWWW"></ins>
+          <script>
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          </script>
         </div>
       </div>
-      
-      <div id="inbox-files" style="display:flex; flex-direction:column; gap:0.75rem; max-height:280px; overflow-y:auto; padding-right:0.25rem;">
-        <div id="inbox-placeholder" style="text-align:center; color:var(--m2); font-size:0.8rem; padding:2rem 1rem; border:1px dashed var(--b); border-radius:var(--r);">
-          No files dropped yet.<br>Scan the QR or open the link on another device to start sending.
-        </div>
-      </div>
-      
-      <div class="stl" id="stl" style="display:flex;align-items:center;margin-top:1rem;"><span class="dot dy pu"></span><span id="stx">Initializing dashboard...</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
-      <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
     </div>`;
 
   $('qrc').innerHTML = '';
@@ -1484,6 +1526,18 @@ function showInboxSenderProgressUI(file, code, index, count) {
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Connecting…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+      
+      <!-- AdSense Mobile Banner -->
+      <div style="margin-top: 1.25rem; text-align: center; border-top: 1px dashed var(--b); padding-top: 1rem;">
+        <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:320px;height:100px"
+             data-ad-client="ca-pub-XXXXXXXXXX"
+             data-ad-slot="YYYYYYYYYY"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
     </div>`;
   $('fic').textContent=mIco(file.type);
 }
@@ -1770,6 +1824,18 @@ function showSendPersistentProgressUI(file, index, count, dc, pc, ws) {
       <div class="stl" id="stl" style="display:flex;align-items:center;"><span class="dot dy pu"></span><span id="stx">Offering file to receiver…</span><span id="timer-val" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;color:var(--m);">0s</span></div>
       <div id="dbg" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:var(--m);background:rgba(0,0,0,0.2);padding:0.5rem;border-radius:6px;margin-top:0.5rem;max-height:100px;overflow-y:auto;text-align:left;display:none;line-height:1.4;"></div>
       <div id="pw" style="display:none"><div class="pw"><div class="pr"><span id="pl">Sending…</span><span style="display:flex;gap:.75rem"><span id="spd" style="color:var(--m)"></span><span id="eta" style="color:var(--m)"></span><span id="pct">0%</span></span></div><div class="pt"><div class="pf" id="pf" style="width:0%"></div></div></div></div>
+      
+      <!-- AdSense Mobile Banner -->
+      <div style="margin-top: 1.25rem; text-align: center; border-top: 1px dashed var(--b); padding-top: 1rem;">
+        <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:320px;height:100px"
+             data-ad-client="ca-pub-XXXXXXXXXX"
+             data-ad-slot="YYYYYYYYYY"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
     </div>`;
   $('fic').textContent = mIco(file.type);
 }
