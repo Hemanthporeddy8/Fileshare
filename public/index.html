@@ -275,16 +275,26 @@ function showWifiShare() {
           <button class="btn bg bsm" onclick="showHome(true)">← Back</button>
         </div>
         <div style="text-align:center; padding:1.5rem 1rem; border:1.5px dashed var(--b); border-radius:var(--r); background:rgba(255,255,255,0.01);">
-          <div style="font-size:2rem; margin-bottom:0.75rem;">💻</div>
-          <div style="font-family:Syne,sans-serif; font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--wn);">Local Server Required</div>
+          <div style="font-size:2rem; margin-bottom:0.75rem;">📲</div>
+          <div style="font-family:Syne,sans-serif; font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--a);">Share via WiFi</div>
           <p style="font-size:0.75rem; color:var(--m); line-height:1.4; max-width:340px; margin:0 auto 1rem;">
-            This feature is designed for offline sharing when the application is running locally on your PC (e.g. via <code>npm start</code> or double-clicking the app).
+            You can share via WiFi when the app is downloaded on both devices.
           </p>
-          <p style="font-size:0.72rem; color:var(--m2); line-height:1.4;">
-            Since you are currently accessing this site over the public cloud (Vercel/Render), please use the standard <strong>Send File</strong> or <strong>Express Permanent Share Mode</strong> options.
+          <p style="font-size:0.72rem; color:var(--m2); line-height:1.4; margin:0;">
+            Please use the standard <strong>Send File</strong> or <strong>Express Permanent Share Mode</strong> options.
           </p>
         </div>
+        
+        <!-- AdSense Mobile Banner -->
+        <div style="margin-top: 1.25rem; text-align: center; border-top: 1px dashed var(--b); padding-top: 1rem;">
+          <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+          <ins class="adsbygoogle"
+               style="display:inline-block;width:320px;height:100px"
+               data-ad-client="ca-pub-XXXXXXXXXX"
+               data-ad-slot="YYYYYYYYYY"></ins>
+        </div>
       </div>`;
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error("AdSense error:", e); }
     return;
   }
   
@@ -321,7 +331,17 @@ function showWifiShare() {
           <strong>⚡ Note:</strong> Files will stream directly between devices over your local network. No files ever travel over the internet, and transfer speeds are limited only by your WiFi router!
         </div>
       </div>
+      
+      <!-- AdSense Mobile Banner -->
+      <div style="margin-top: 1.25rem; text-align: center; border-top: 1px dashed var(--b); padding-top: 1rem;">
+        <div style="font-size:0.6rem; color:var(--m2); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.05em; font-weight:600;">Advertisement</div>
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:320px;height:100px"
+             data-ad-client="ca-pub-XXXXXXXXXX"
+             data-ad-slot="YYYYYYYYYY"></ins>
+      </div>
     </div>`;
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error("AdSense error:", e); }
   
   fetch('/api/wifi/ip')
     .then(r => r.json())
